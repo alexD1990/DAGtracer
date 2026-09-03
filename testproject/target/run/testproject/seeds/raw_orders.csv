@@ -1,0 +1,11 @@
+
+    
+    
+    truncate table "testproject"."main"."raw_orders";
+    -- dbt seed --
+    
+          COPY "testproject"."main"."raw_orders" FROM '/home/alex/dbt-lineage/testproject/seeds/raw_orders.csv' (FORMAT CSV, HEADER TRUE, DELIMITER ',')
+        
+
+;
+  

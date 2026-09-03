@@ -1,0 +1,13 @@
+name: testproject
+version: '1.0.0'
+config-version: 2
+
+profile: testproject
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  testproject:
+    +materialized: table
