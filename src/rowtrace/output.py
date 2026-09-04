@@ -1,23 +1,23 @@
-"""Steg 7 — JSON-output (architectur.md §12, revidert etter steg 1-6.5,
-og rendyrket i steg 8.6 til ren presence-lineage).
+"""Step 7 — JSON output (architectur.md §12, revised after step 1-6.5,
+and refined in step 8.6 to pure presence-lineage).
 
-Ren fold: TraceResult (steg 3) + BoundaryReport (steg 4) -> ett komplett
-JSON-dokument. Ingen I/O, ingen klokke — started_at/finished_at gis av
-kalleren.
+Pure fold: TraceResult (step 3) + BoundaryReport (step 4) -> one complete
+JSON document. No I/O, no clock — started_at/finished_at given by
+caller.
 
-SCHEMA_VERSION hevet til "2.0" i steg 8.6: diagnoselaget (join/filter,
-steg 5/6/6.5) er koblet fra hovedstien (verktøyet gjør ingen vurdering av
-funn lenger, kun presence). Dette fjerner 'conclusion', 'evidence',
-'filters' og 'join' fra hvert boundary-objekt, og fjerner 'checked'-feltet
-og include_checked-parameteren helt (default text-visning viser nå alt
-sjekket per nivå uansett — se cli.py sin _render_text()). Diagnoselagets
-kildekode (joins.py/filters.py/sqlparsing.py) er IKKE slettet — kun
-koblet fra output.py og cli.py sin hovedsti. Se docs/byggeplan.md steg
-8.6 for full begrunnelse.
-SCHEMA_VERSION hevet til "2.1": nytt felt 'present_at_source', symmetrisk
-med 'absent_at_source' — terminale noder (seed/source) hvor verdien faktisk
-finnes. Additivt, ikke brytende: ingen eksisterende felt fjernet eller
-endret betydning, kun nytt innhold lagt til toppnivådokumentet.
+SCHEMA_VERSION raised to "2.0" in step 8.6: diagnostic layer (join/filter,
+step 5/6/6.5) is disconnected from the main path (the tool makes no evaluation of
+findings anymore, only presence). This removes 'conclusion', 'evidence',
+'filters' and 'join' from each boundary object, and removes the 'checked' field
+and include_checked parameter entirely (default text display now shows all
+checked per level regardless — see cli.py's _render_text()). The diagnostic layer's
+source code (joins.py/filters.py/sqlparsing.py) is NOT deleted — only
+disconnected from output.py and cli.py's main path. See docs/byggeplan.md step
+8.6 for full rationale.
+SCHEMA_VERSION raised to "2.1": new field 'present_at_source', symmetric
+with 'absent_at_source' — terminal nodes (seed/source) where the value actually
+exists. Additive, not breaking: no existing field removed or
+changed meaning, only new content added to the top-level document.
 """
 
 from __future__ import annotations

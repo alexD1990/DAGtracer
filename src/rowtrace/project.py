@@ -1,8 +1,8 @@
-"""Delt prosjektkontekst og feiltyper.
+"""Shared project context and error types.
 
-Beslutning E (docs/byggeplan.md): prosjektsti og profilsti er alltid
-parametere. Verktøyets repo og dbt-prosjektet det kjører mot er to
-separate mapper.
+Decision E (docs/byggeplan.md): project path and profile path are always
+parameters. The tool's repo and the dbt project it runs against are two
+separate directories.
 """
 
 from __future__ import annotations
@@ -12,20 +12,20 @@ from pathlib import Path
 
 
 class RowtraceError(RuntimeError):
-    """Basefeil. Alt som bobler ut hit blir exit-kode 2 (architectur.md §13.3)."""
+    """Base error. Everything that bubbles out here becomes exit code 2 (architectur.md §13.3)."""
 
 
 class MetadataError(RowtraceError):
-    """Manifest/catalog mangler, er ugyldig, eller noden finnes ikke."""
+    """Manifest/catalog is missing, invalid, or node doesn't exist."""
 
 
 class PresenceError(RowtraceError):
-    """dbt-kallet eller parsingen av det feilet."""
+    """The dbt call or parsing of it failed."""
 
 
 @dataclass(frozen=True)
 class DbtProject:
-    """Peker på dbt-prosjektet verktøyet kjører *mot* — aldri verktøyets eget repo."""
+    """Points to the dbt project the tool runs *against* — never the tool's own repo."""
 
     project_dir: Path
     profiles_dir: Path | None = None
@@ -44,7 +44,7 @@ class DbtProject:
     ) -> "DbtProject":
         pd = Path(project_dir).expanduser().resolve()
         if not pd.is_dir():
-            raise RowtraceError(f"project_dir finnes ikke: {pd}")
+            raise RowtraceError(f"project_dir does not exist: {pd}")
 
         def _opt(p: str | Path | None) -> Path | None:
             return Path(p).expanduser().resolve() if p else None

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Steg 6 manuell test: filtersjekk + kombinert konklusjon.
+"""step 6 manual test: filtersjekk + kombinert konklusjon.
 
-Kjør (fra repo-rot):
+Run (from repo root):
     python step6_test.py --project-dir testproject --profiles-dir testproject
     python step6_test.py --project-dir testproject --profiles-dir testproject --value 333
     python step6_test.py --project-dir testproject --profiles-dir testproject --value 555
     python step6_test.py --project-dir testproject --profiles-dir testproject --value 444 --from prep_deduped
 
-OBS 444: forsvinner i prep_deduped, som ikke er en forelder av mart_summary
-(jf. step4_test.py sin merknad). Må spores fra prep_deduped direkte for at
-dedup-scenarioet faktisk skal testes.
+OBS 444: forswins in prep_deduped, that ikke is a parent by mart_summary
+(jf. step4_test.py sin merknad). must spores from prep_deduped direkte for at
+dedup-scenarioet faktisk should testes.
 """
 
 from __future__ import annotations
@@ -26,17 +26,17 @@ from rowtrace.metadata import find_node, load_catalog, load_manifest  # noqa: E4
 from rowtrace.project import DbtProject, RowtraceError  # noqa: E402
 from rowtrace.traverse import trace_upstream  # noqa: E402
 
-# Fasit: {(from_node, value): {barnnavn: forventet endelig konklusjon}}
+# Fasit: {(from_node, value): {barnnavn: forexpected endelig konklusjon}}
 #
-# 222: uendret fra steg 5 (join_confirmed alene, ingen filtersjekk trengs).
-# 333: mart_summary uendret join_confirmed. prep_active_orders går fra
-#      not_explained_by_join (steg 5) til filter_suspected (WHERE
+# 222: uendret from step 5 (join_confirmed alene, no filtersjekk trengs).
+# 333: mart_summary uendret join_confirmed. prep_active_orders går from
+#      not_explained_by_join (step 5) to filter_suspected (WHERE
 #      status='ACTIVE' funnet).
-# 555: mart_summary -> unexplained. Dette ER selve testen for
-#      EXCEPT-avgrensningen i filters.py (se moduldoc der) — en feil her
+# 555: mart_summary -> unexplained. This is selve testen for
+#      EXCEPT-avgrensningen in filters.py (se moduldoc der) — a wrong her
 #      betyr mest sannsynlig at settoperasjon-ekskluderingen ikke virker.
-# 444 (fra prep_deduped, IKKE mart_summary): eneste grensenode er
-#      prep_deduped selv, med dedup-mønsteret (underspørring row_number()
+# 444 (from prep_deduped, IKKE mart_summary): eneste grensenode is
+#      prep_deduped selv, with dedup-mønsteret (underspørring row_number()
 #      as rn, ytre where rn=1) -> filter_suspected.
 EXPECTED = {
     ("mart_summary", "222"): {"prep_customer_orders": "join_confirmed"},
@@ -99,7 +99,7 @@ def main() -> int:
         report.boundaries, manifest, project, args.key, dialect=args.dialect
     )
 
-    hdr("Diagnose (steg 5 + 6)")
+    hdr("Diagnose (step 5 + 6)")
     got: dict[str, str] = {}
     for d in diagnoses:
         got[d.name] = d.conclusion
@@ -110,22 +110,22 @@ def main() -> int:
                 print(f"      join   {j.parent_name:<24} {j.join_type:<6} role={j.role:<7} {mark}")
         if d.filters.filters:
             for f in d.filters.filters:
-                ref = " (refererer nøkkelkolonne)" if f.references_key_column else ""
+                ref = " (refererer nøkkelcolumn)" if f.references_key_column else ""
                 print(f"      filter [{f.kind}] {f.clause}{ref}")
         for n in (*d.join.notes, *d.filters.notes):
             print(f"      note: {n}")
 
-    # --- Sammenlign mot fasit -------------------------------------------
+    # --- Sammenlign against reference -------------------------------------------
     failures: list[str] = []
     expected = EXPECTED.get((args.from_node, args.value))
 
     hdr("Fasit-sammenligning")
     if expected is None:
-        print(f"  Ingen fasit registrert for {args.from_node} / {args.value}.")
+        print(f"  no fasit registrert for {args.from_node} / {args.value}.")
     elif got != expected:
-        failures.append(f"konklusjoner: forventet {expected}, fikk {got}")
+        failures.append(f"konklusjoner: forexpected {expected}, got {got}")
     else:
-        print("  Alt stemmer med fasit.")
+        print("  Everything matches reference.")
 
     hdr("Oppsummering")
     if failures:
@@ -141,5 +141,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RowtraceError as exc:
-        print(f"\nVerktøyfeil: {exc}", file=sys.stderr)
+        print(f"\nTool error: {exc}", file=sys.stderr)
         sys.exit(2)

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Steg 5 manuell test: sqlglot join-analyse.
+"""step 5 manual test: sqlglot join-analyse.
 
-Dialekt-røyktest mot et ekte Postgres-prosjekt er bevisst UTSATT til beta
-(docs/byggeplan.md, steg 5) — denne testen kjører kun mot testproject/DuckDB.
+Dialekt-røyktest against a ekte Postgres-project is deliberately UTSATT to beta
+(docs/byggeplan.md, step 5) — denne testen only runs against testproject/DuckDB.
 
-Kjør (fra repo-rot):
+Run (from repo root):
     python step5_test.py --project-dir testproject --profiles-dir testproject
     python step5_test.py --project-dir testproject --profiles-dir testproject --value 333
     python step5_test.py --project-dir testproject --profiles-dir testproject --value 555
 
-Krever 'pip install sqlglot' i samme miljø som resten av verktøyet, hvis
-det ikke allerede er installert.
+Krever 'pip install sqlglot' in same miljø that resten by the tool, if
+det ikke allerede is installert.
 """
 
 from __future__ import annotations
@@ -31,25 +31,25 @@ from rowtrace.metadata import find_node, load_catalog, load_manifest  # noqa: E4
 from rowtrace.project import DbtProject, RowtraceError  # noqa: E402
 from rowtrace.traverse import trace_upstream  # noqa: E402
 
-# Fasit: {barnnavn: forventet konklusjon}. Kun grensenoder som faktisk
-# oppstår for hvert orgnr (jf. step4_test.py sin fasit) er med her.
+# Fasit: {barnnavn: forexpected konklusjon}. Kun grensenoder that faktisk
+# oppstår for each orgnr (jf. step4_test.py sin fasit) is with her.
 #
-# 222: prep_customer_orders er ENESTE grensenode. Fraværende forelder er
-# stg_orders, joinet med INNER JOIN som non-driving side -> join_confirmed.
-# Dette er brukerens opprinnelige manuelle testkriterium for steg 5.
+# 222: prep_customer_orders is ENESTE grensenode. Fraværende parent is
+# stg_orders, joinet with INNER JOIN that non-driving side -> join_confirmed.
+# This is brukerens opprinnelige manuelle testkriterium for step 5.
 #
 # 333: to grensenoder (jf. step4_test.py).
-#   - mart_summary: fraværende forelder er prep_active_orders, INNER JOIN
-#     som non-driving side i CTE-en "combined" -> join_confirmed. (At det
-#     EGENTLIG er et filter lenger opp i kjeden endrer ikke at joinet HER,
-#     på mart_summary sitt eget nivå, strukturelt forklarer bortfallet.)
-#   - prep_active_orders: ingen fraværende forelder i det hele tatt (dens
-#     eneste forelder stg_orders er present) -> not_explained_by_join,
-#     trivielt, uten SQL-parsing. Steg 6 skal finne WHERE-klausulen her.
+#   - mart_summary: fraværende parent is prep_active_orders, INNER JOIN
+#     that non-driving side in CTE-a "combined" -> join_confirmed. (At det
+#     EGENTLIG is a filter lenger opp in kjeden endrer not in joinet HER,
+#     on mart_summary sitt eget nivå, strukturelt forklarer bortfallet.)
+#   - prep_active_orders: no fraværende parent in det the whole tatt (dens
+#     eneste parent stg_orders is present) -> not_explained_by_join,
+#     trivielt, uten SQL-parsing. step 6 should finne WHERE-klausulen her.
 #
-# 555: mart_summary er eneste grensenode, begge foreldre present -> ingen
-# fraværende forelder å eliminere mot -> not_explained_by_join, trivielt.
-# Steg 6 skal gi unexplained (EXCEPT gjenkjennes ikke som filterkonstruksjon).
+# 555: mart_summary is eneste grensenode, begge foreldre present -> no
+# fraværende parent å eliminere against -> not_explained_by_join, trivielt.
+# step 6 should gi unexplained (EXCEPT gjenkjennes ikke that filterkonstruksjon).
 EXPECTED = {
     "222": {
         "prep_customer_orders": CONCLUSION_JOIN_CONFIRMED,
@@ -106,14 +106,14 @@ def main() -> int:
 
     start_uid = find_node(manifest, args.from_node)
 
-    hdr("Traversering + fold (steg 3-4, uendret)")
+    hdr("Traversering + fold (step 3-4, uendret)")
     result = trace_upstream(
         start_uid, args.key, args.value, project=project, manifest=manifest, catalog=catalog
     )
     report = fold_boundaries(result)
     print(f"  grensenoder: {[f.name for f in report.boundaries]}")
 
-    hdr("Join-analyse (steg 5)")
+    hdr("Join-analyse (step 5)")
     analyses = analyze_joins(report, manifest, project=project, dialect=args.dialect)
 
     got: dict[str, str] = {}
@@ -130,18 +130,18 @@ def main() -> int:
         for n in a.notes:
             print(f"      note: {n}")
 
-    # --- Sammenlign mot fasit -------------------------------------------
+    # --- Sammenlign against reference -------------------------------------------
     failures: list[str] = []
     expected = EXPECTED.get(args.value) if args.from_node == "mart_summary" else None
 
     hdr("Fasit-sammenligning")
     if expected is None:
-        print(f"  Ingen fasit registrert for {args.from_node} / {args.value}.")
+        print(f"  no fasit registrert for {args.from_node} / {args.value}.")
     else:
         if got != expected:
-            failures.append(f"konklusjoner: forventet {expected}, fikk {got}")
+            failures.append(f"konklusjoner: forexpected {expected}, got {got}")
         else:
-            print("  Alt stemmer med fasit.")
+            print("  Everything matches reference.")
 
     hdr("Oppsummering")
     if failures:
@@ -157,5 +157,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RowtraceError as exc:
-        print(f"\nVerktøyfeil: {exc}", file=sys.stderr)
+        print(f"\nTool error: {exc}", file=sys.stderr)
         sys.exit(2)

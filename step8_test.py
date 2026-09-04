@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Steg 8 manuell test: den faktiske CLI-en, kjørt som subprocess (mest
-realistiske testen - dette ER grensesnittet brukeren faktisk vil bruke).
+"""step 8 manual test: den actual CLI-a, kjørt that subprocess (mest
+realistiske testen - dette is grensesnittet brukeren faktisk vil bruke).
 
-Sjekker exit-koder og grunnleggende output-form for et representativt
-utvalg: kontrollverdi (exit 0), et reelt funn (exit 1, json og text),
-ndjson-strømmen, --fail-on-tilpasning, og de to ulike feilveiene som gir
-exit 2 (RowtraceError fra cli.py sin egen try/except, og
-status='failed'-veien fra steg 7/traverse.py sitt outcome-enum).
+Sjekker exit-koder and grunnleggende output-form for a representativt
+utvalg: kontrollverdi (exit 0), a real funn (exit 1, json and text),
+ndjson-strømmen, --fail-on-tilpasning, and de to ulike wrongveiene that gives
+exit 2 (RowtraceError from cli.py sin egen try/except, and
+status='failed'-veien from step 7/traverse.py sitt outcome-enum).
 
-Kjør:
+Run:
     python step8_test.py --project-dir testproject --profiles-dir testproject
 """
 
@@ -55,19 +55,19 @@ def main() -> int:
     hdr("1) Kontrollverdi 111 --output json -> exit 0")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "orgnr", "--value", "111",
                 "--from", "mart_summary", "--output", "json")
-    check("exit code == 0", r.returncode == 0, f"fikk {r.returncode}")
+    check("exit code == 0", r.returncode == 0, f"got {r.returncode}")
     try:
         doc = json.loads(r.stdout)
         check("gyldig JSON", True)
         check("status == complete", doc.get("status") == "complete", doc.get("status"))
-        check("ingen boundaries", doc.get("boundaries") == [], doc.get("boundaries"))
+        check("no boundaries", doc.get("boundaries") == [], doc.get("boundaries"))
     except json.JSONDecodeError as exc:
         check("gyldig JSON", False, str(exc))
 
     hdr("2) 222 --output json -> exit 1, join_confirmed")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "orgnr", "--value", "222",
                 "--from", "mart_summary", "--output", "json")
-    check("exit code == 1", r.returncode == 1, f"fikk {r.returncode}")
+    check("exit code == 1", r.returncode == 1, f"got {r.returncode}")
     try:
         doc = json.loads(r.stdout)
         conclusions = {b["name"]: b["conclusion"] for b in doc.get("boundaries", [])}
@@ -82,14 +82,14 @@ def main() -> int:
     hdr("3) 222 --output text -> exit 1, lesbar tekst")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "orgnr", "--value", "222",
                 "--from", "mart_summary", "--output", "text")
-    check("exit code == 1", r.returncode == 1, f"fikk {r.returncode}")
-    check("inneholder 'join_confirmed'", "join_confirmed" in r.stdout)
-    check("inneholder 'prep_customer_orders'", "prep_customer_orders" in r.stdout)
+    check("exit code == 1", r.returncode == 1, f"got {r.returncode}")
+    check("contains 'join_confirmed'", "join_confirmed" in r.stdout)
+    check("contains 'prep_customer_orders'", "prep_customer_orders" in r.stdout)
 
-    hdr("4) 666 --output ndjson -> gyldige linjer, siste er run_finished")
+    hdr("4) 666 --output ndjson -> gyldige linjer, siste is run_finished")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "orgnr", "--value", "666",
                 "--from", "mart_summary", "--output", "ndjson")
-    check("exit code == 1", r.returncode == 1, f"fikk {r.returncode}")
+    check("exit code == 1", r.returncode == 1, f"got {r.returncode}")
     lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
     all_valid = True
     events = []
@@ -98,28 +98,28 @@ def main() -> int:
             events.append(json.loads(ln))
         except json.JSONDecodeError:
             all_valid = False
-    check("alle linjer er gyldig JSON", all_valid, f"{len(lines)} linjer")
-    check("siste hendelse er run_finished", bool(events) and events[-1].get("event") == "run_finished")
+    check("all linjer is gyldig JSON", all_valid, f"{len(lines)} linjer")
+    check("siste hendelse is run_finished", bool(events) and events[-1].get("event") == "run_finished")
     check(
-        "minst én finding-hendelse med kind=boundary",
+        "minst one finding-hendelse with kind=boundary",
         any(e.get("event") == "finding" and e.get("kind") == "boundary" for e in events),
     )
 
-    hdr("5) 222 --fail-on '' (tom) -> exit 0 selv med funn")
+    hdr("5) 222 --fail-on '' (tom) -> exit 0 selv with funn")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "orgnr", "--value", "222",
                 "--from", "mart_summary", "--output", "json", "--fail-on", "")
-    check("exit code == 0", r.returncode == 0, f"fikk {r.returncode}")
+    check("exit code == 0", r.returncode == 0, f"got {r.returncode}")
 
     hdr("6) Ukjent --key -> exit 2 (status=failed-veien, ikke RowtraceError)")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "finnes_ikke", "--value", "222",
                 "--from", "mart_summary", "--output", "json")
-    check("exit code == 2", r.returncode == 2, f"fikk {r.returncode}, stderr={r.stderr[:200]!r}")
+    check("exit code == 2", r.returncode == 2, f"got {r.returncode}, stderr={r.stderr[:200]!r}")
 
-    hdr("7) Ukjent --from -> exit 2 (RowtraceError-veien i cli.py)")
+    hdr("7) Ukjent --from -> exit 2 (RowtraceError-veien in cli.py)")
     r = run_cli(args.project_dir, args.profiles_dir, "--key", "orgnr", "--value", "222",
                 "--from", "modell_som_ikke_finnes")
-    check("exit code == 2", r.returncode == 2, f"fikk {r.returncode}")
-    check("feilmelding på stderr", "Verktøyfeil" in r.stderr, r.stderr[:200])
+    check("exit code == 2", r.returncode == 2, f"got {r.returncode}")
+    check("wrongmelding on stderr", "Tool error" in r.stderr, r.stderr[:200])
 
     hdr("Oppsummering")
     if failures:

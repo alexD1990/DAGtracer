@@ -1,54 +1,54 @@
 # dgt — dbt Row-Level Lineage Tracer
 
-Sporer hvor en rad forsvinner oppstrøms i en dbt-DAG, basert kun på
-tilstedeværelse (finnes verdien her eller ikke). Verktøyet gjør ingen
-vurdering av *hvorfor* — det er opp til deg å lese modellens SQL.
+Traces where a row disappears upstream in a dbt DAG, based solely on
+presence (does the value exist here or not). The tool makes no
+evaluation of *why* — that's up to you to read the model's SQL.
 
-## Bruk
-dgt key,value,from [flagg]
+## Usage
+dgt key,value,from [flags]
 
-## Eksempel:
+## Example:
 - dgt orgnr,222,mart_summary --project-dir testproject --profiles-dir testproject
-- `key` — kolonnenavnet du sporer på
-- `value` — verdien (alltid behandlet som tekst)
-- `from` — startmodell (kortnavn eller full node-UID)
+- `key` — the column name you're tracing on
+- `value` — the value (always treated as text)
+- `from` — start model (short name or full node UID)
 
-## `.dgt.yml` — slipp å gjenta --project-dir/--profiles-dir
+## `.dgt.yml` — avoid repeating --project-dir/--profiles-dir
 
-Legg en `.dgt.yml`-fil i mappa du kjører `dgt` fra:
+Place a `.dgt.yml` file in the directory you run `dgt` from:
 
 ```yaml
 project_dir: .
 profiles_dir: .
 ```
 
-Da holder det å skrive:
+Then it's enough to write:
 dgt orgnr,222,mart_summary
 
 
-**Presedens** (høyest til lavest):
+**Precedence** (highest to lowest):
 
-1. `--project-dir`/`--profiles-dir` på kommandolinja, hvis oppgitt
-2. Verdi fra `.dgt.yml`, hvis fila finnes og nøkkelen er satt der
-3. Hardkodet fallback: kun `project_dir` faller tilbake til `.`.
-   `profiles_dir` har ingen egen fallback — mangler den overalt, lar
-   `dgt` dbt selv finne profilen (`~/.dbt/` eller `DBT_PROFILES_DIR`).
+1. `--project-dir`/`--profiles-dir` on the command line, if provided
+2. Value from `.dgt.yml`, if the file exists and the key is set there
+3. Hardcoded fallback: only `project_dir` falls back to `.`.
+   `profiles_dir` has no fallback of its own — if missing everywhere, let
+   `dgt` dbt itself find the profile (`~/.dbt/` or `DBT_PROFILES_DIR`).
 
-`.dgt.yml` opprettes ikke automatisk — du lager den selv.
+`.dgt.yml` is not created automatically — you create it yourself.
 
 ## project_dir vs. profiles_dir
 
-Dette spørres ofte om:
+This is often asked about:
 
-- **`project_dir`** er mappa med `dbt_project.yml` og modellene dine —
-  selve dbt-prosjektet.
-- **`profiles_dir`** er mappa med `profiles.yml` — filen som sier
-  *hvordan* dbt kobler til warehouse (credentials, target). Den ligger
-  som regel i `~/.dbt/`, men et prosjekt kan ha sin egen lokale
-  `profiles.yml` (slik `testproject/` i dette repoet gjør) — da må du
-  peke `--profiles-dir` dit eksplisitt, ellers finner ikke dbt riktig
-  profil.
+- **`project_dir`** is the directory with `dbt_project.yml` and your models —
+  the dbt project itself.
+- **`profiles_dir`** is the directory with `profiles.yml` — the file that says
+  *how* dbt connects to the warehouse (credentials, target). It's usually
+  in `~/.dbt/`, but a project can have its own local `profiles.yml`
+  (as `testproject/` in this repo does) — then you must
+  point `--profiles-dir` there explicitly, otherwise dbt won't find the right
+  profile.
 
 ## Output
 
-`--output text` (default), `json`, eller `ndjson`.
+`--output text` (default), `json`, or `ndjson`.

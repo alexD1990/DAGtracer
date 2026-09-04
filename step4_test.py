@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Steg 4 manuell test: grensenode- og absent_at_source-identifisering.
+"""step 4 manual test: grensenode- and absent_at_source-identifisering.
 
-Ren fold over TraceResult fra steg 3 (rowtrace.boundaries.fold_boundaries).
-Ingen nye dbt-kall utover det trace_upstream (steg 3) uansett gjør.
+Ren fold over TraceResult from step 3 (rowtrace.boundaries.fold_boundaries).
+no new dbt calls utover det trace_upstream (step 3) anyway does.
 
-Kjør (fra repo-rot):
+Run (from repo root):
     python step4_test.py --project-dir testproject --profiles-dir testproject
     python step4_test.py --project-dir testproject --profiles-dir testproject --value 333
     python step4_test.py --project-dir testproject --profiles-dir testproject --value 555
 
-Fasiten under er utledet fra byggeplanens scenariotabell OG fra de faktiske
-SQL-filene i testproject/models (ikke fra en tidligere kjøring), for de fem
-orgnr fra mart_summary.
+Fasiten under is derived from byggeplanens scenario table and from de actual
+SQL files in testproject/models (ikke from a tidligere run), for the five
+orgnr from mart_summary.
 """
 
 from __future__ import annotations
@@ -27,29 +27,29 @@ from rowtrace.metadata import find_node, load_catalog, load_manifest  # noqa: E4
 from rowtrace.project import DbtProject, RowtraceError  # noqa: E402
 from rowtrace.traverse import OUTCOME_COMPLETE, OUTCOME_START_PRESENT, trace_upstream  # noqa: E402
 
-# Fasit for fold_boundaries() på trace fra mart_summary.
+# Fasit for fold_boundaries() on trace from mart_summary.
 #
 # "boundaries": {barnnavn: {forelderanvn: forventet_status, ...}, ...}
 # "absent_at_source": {nodenavn, ...}
 #
-# Foreldre-strukturen (fra testproject/models/**/*.sql, ikke fra diagrammet
-# i byggeplan.md, som er tvetydig på dette punktet):
+# Foreldre-strukturen (from testproject/models/**/*.sql, not from diagrammet
+# in byggeplan.md, that is tvetydig on dette punktet):
 #   prep_customer_orders <- stg_customers, stg_orders   (INNER JOIN)
-#   prep_active_orders   <- stg_orders                  (kun én forelder!)
+#   prep_active_orders   <- stg_orders                  (kun one parent!)
 #   mart_summary         <- prep_customer_orders, prep_active_orders
 EXPECTED = {
-    # Kontroll: finnes overalt. Startnoden er present -> avbrutt umiddelbart,
-    # ingen fold å gjøre (fold_boundaries kalles fortsatt, men edges er tomt).
+    # Kontroll: exists overalt. Startnoden is present -> avbrutt umiddelbart,
+    # no fold to gjøre (fold_boundaries is called still, but edges are empty).
     "111": {
         "outcome": OUTCOME_START_PRESENT,
         "boundaries": {},
         "absent_at_source": set(),
     },
-    # Kunde uten ordre. prep_customer_orders mister raden pga INNER JOIN mot
-    # stg_orders (absent), men stg_customers (present) gjør den til en
-    # grensenode. prep_active_orders sin ENESTE forelder er stg_orders
-    # (absent) -> ingen present forelder -> IKKE grensenode, traverseringen
-    # fortsetter i stedet forbi den, via stg_orders, til raw_orders.
+    # Customer without ordre. prep_customer_orders mister raden pga INNER JOIN against
+    # stg_orders (absent), but stg_customers (present) makes it a a
+    # grensenode. prep_active_orders sin ENESTE parent is stg_orders
+    # (absent) -> no present parent -> IKKE grensenode, the traversal
+    # fortsafter in instead forbi den, via stg_orders, to raw_orders.
     "222": {
         "outcome": OUTCOME_COMPLETE,
         "boundaries": {
@@ -60,11 +60,11 @@ EXPECTED = {
         },
         "absent_at_source": {"raw_orders"},
     },
-    # Filtrert bort i prep_active_orders (where status='ACTIVE'), men verdien
-    # finnes hele veien til kilden. To grensenoder i samme kjede: selve
-    # prep_active_orders (forelder stg_orders present, filter fjerner raden)
-    # OG mart_summary ett hakk lenger ned (prep_customer_orders fortsatt
-    # present der, siden den ikke filtrerer på status).
+    # Filtrert bort in prep_active_orders (where status='ACTIVE'), but the value
+    # exists the whole veien to kilden. To grensenoder in same kjede: selve
+    # prep_active_orders (parent stg_orders present, filter fjerner raden)
+    # and mart_summary ett hakk lenger ned (prep_customer_orders still
+    # present der, siden den ikke filtrerer on status).
     "333": {
         "outcome": OUTCOME_COMPLETE,
         "boundaries": {
@@ -78,21 +78,21 @@ EXPECTED = {
         },
         "absent_at_source": set(),
     },
-    # OBS: 444 forsvinner i prep_deduped, som IKKE er en forelder av
-    # mart_summary (prep_deduped er nedstrøms for prep_active_orders, en
-    # søstergren mart_summary ikke bruker). Fra mart_summary er 444 derfor
-    # present i startnoden -> samme utfall som kontrollverdien 111. Å faktisk
-    # teste 444 sin grensenode krever --from prep_deduped, utenfor denne
-    # fasiten (mart_summary er byggeplanens faste startpunkt for steg 4).
+    # OBS: 444 forswins in prep_deduped, that IKKE is a parent by
+    # mart_summary (prep_deduped is downstream of prep_active_orders, a
+    # søstergren mart_summary ikke bruker). from mart_summary is 444 derfor
+    # present in startnoden -> same utfall that kontrollthe value 111. Å faktisk
+    # teste 444 sin grensenode krever --from prep_deduped, outside denne
+    # fasiten (mart_summary is byggeplanens faste startpunkt for step 4).
     "444": {
         "outcome": OUTCOME_START_PRESENT,
         "boundaries": {},
         "absent_at_source": set(),
     },
-    # Forsvinner i mart_summary selv (EXCEPT-mønsteret), begge foreldre
-    # present. Klassisk "ingen foreldre er skyld i det" - diagnostikklaget
-    # i steg 6 skal gi unexplained her, men det er IKKE steg 4 sin jobb å
-    # vite det; steg 4 skal bare se at mart_summary kvalifiserer strukturelt.
+    # Forswins in mart_summary selv (EXCEPT-mønsteret), begge foreldre
+    # present. Klassisk "no foreldre is skyld in det" - diagnostikklaget
+    # in step 6 should gi unexplained her, but det is IKKE step 4 sin jobb å
+    # vite det; step 4 should bare se at mart_summary kvalifiserer strukturelt.
     "555": {
         "outcome": OUTCOME_COMPLETE,
         "boundaries": {
@@ -154,11 +154,11 @@ def main() -> int:
     manifest = load_manifest(project)
     catalog = load_catalog(project, required=False)
     if catalog is None:
-        print("\nADVARSEL: catalog.json mangler. Kjør 'dbt docs generate'.")
+        print("\nWARNING: catalog.json is missing. Run 'dbt docs generate'.")
 
     start_uid = find_node(manifest, args.from_node)
 
-    hdr("Traversering (steg 3, uendret)")
+    hdr("Traversering (step 3, uendret)")
     result = trace_upstream(
         start_uid,
         args.key,
@@ -168,13 +168,13 @@ def main() -> int:
         catalog=catalog,
     )
     print(f"  utfall: {result.outcome}")
-    print(f"  noder besøkt: {result.stats.nodes_visited}")
+    print(f"  nodes besøkt: {result.stats.nodes_visited}")
 
-    hdr("Fold: grensenoder og absent_at_source (steg 4)")
+    hdr("Fold: grensenoder and absent_at_source (step 4)")
     report = fold_boundaries(result)
 
     if not report.boundaries:
-        print("  Ingen grensenoder.")
+        print("  no grensenoder.")
     for finding in report.boundaries:
         print(f"\n  {finding.name}  (dybde {finding.depth}, {finding.resource_type})")
         for parent in finding.parents:
@@ -188,19 +188,19 @@ def main() -> int:
             print(f"  ABSENT_AT_SOURCE: {finding.name}  (dybde {finding.depth})")
             print(f"      reached_via: {path_names}")
     else:
-        print("\n  Ingen absent_at_source-funn.")
+        print("\n  no absent_at_source-funn.")
 
-    # --- Sammenlign mot fasit -------------------------------------------
+    # --- Sammenlign against reference -------------------------------------------
     failures: list[str] = []
     expected = EXPECTED.get(args.value) if args.from_node == "mart_summary" else None
 
     hdr("Fasit-sammenligning")
     if expected is None:
-        print(f"  Ingen fasit registrert for {args.from_node} / {args.value}.")
+        print(f"  no fasit registrert for {args.from_node} / {args.value}.")
     else:
         if result.outcome != expected["outcome"]:
             failures.append(
-                f"utfall: forventet {expected['outcome']}, fikk {result.outcome}"
+                f"utfall: forexpected {expected['outcome']}, got {result.outcome}"
             )
 
         got_boundaries = {
@@ -208,32 +208,32 @@ def main() -> int:
         }
         if got_boundaries != expected["boundaries"]:
             failures.append(
-                f"boundaries: forventet {expected['boundaries']}, fikk {got_boundaries}"
+                f"boundaries: forexpected {expected['boundaries']}, got {got_boundaries}"
             )
 
         got_aas = {f.name for f in report.absent_at_source}
         if got_aas != expected["absent_at_source"]:
             failures.append(
-                f"absent_at_source: forventet {sorted(expected['absent_at_source'])}, "
-                f"fikk {sorted(got_aas)}"
+                f"absent_at_source: forexpected {sorted(expected['absent_at_source'])}, "
+                f"got {sorted(got_aas)}"
             )
 
-        # reached_via strukturell sjekk (ikke eksakt sti - diamant kan gi
-        # flere like korte, gyldige stier, jf. docstring i _shortest_path_uids).
+        # reached_via strukturell sjekk (ikke eksakt sti - diamant can gi
+        # multiple equally short, gyldige stier, jf. docstring in _shortest_path_uids).
         for finding in report.absent_at_source:
             path = finding.reached_via
             if path[0] != result.start_node or path[-1] != finding.node_uid:
                 failures.append(
-                    f"reached_via for {finding.name}: mangler start- eller sluttnode: {path}"
+                    f"reached_via for {finding.name}: mangler start- or sluttnode: {path}"
                 )
             for a, b in zip(path, path[1:]):
                 if b not in result.edges.get(a, []):
                     failures.append(
-                        f"reached_via for {finding.name}: {a} -> {b} er ikke en reell kant"
+                        f"reached_via for {finding.name}: {a} -> {b} is ikke a reell kant"
                     )
 
         if not failures:
-            print("  Alt stemmer med fasit.")
+            print("  Everything matches reference.")
 
     hdr("Oppsummering")
     if failures:
@@ -249,5 +249,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RowtraceError as exc:
-        print(f"\nVerktøyfeil: {exc}", file=sys.stderr)
+        print(f"\nTool error: {exc}", file=sys.stderr)
         sys.exit(2)

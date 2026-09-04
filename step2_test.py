@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Steg 2 manuell test: foreldre-oppslag ett nivå + kolonnevalidering.
+"""step 2 manual test: parent lookup one level + column validation.
 
-Beslutning E: prosjekt- og profilsti er parametere, aldri konstanter.
+Decision E: project- and profilsti is parametere, aldri konstanter.
 
-Kjør (fra repo-rot):
+Run (from repo root):
     python step2_test.py --project-dir testproject --profiles-dir testproject
 
-Krever at 'dbt docs generate' er kjørt i prosjektet, slik at catalog.json
-finnes. Uten --check gjøres ingen spørringer mot warehouse i det hele tatt.
+Requires that 'dbt docs generate' has been run in the project, so that catalog.json
+finnes. Without --check no queries are made against the warehouse at all.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ from rowtrace.metadata import (  # noqa: E402
 from rowtrace.presence import check_presence_guarded  # noqa: E402
 from rowtrace.project import DbtProject, RowtraceError  # noqa: E402
 
-# Fasit fra docs/byggeplan.md. Kortnavn, siden testen er mot testproject.
+# Fasit from docs/byggeplan.md. Kortnavn, siden testen is against testproject.
 EXPECTED_PARENTS = {
     "mart_summary": {"prep_customer_orders", "prep_active_orders"},
     "prep_customer_orders": {"stg_customers", "stg_orders"},
@@ -45,13 +45,13 @@ EXPECTED_PARENTS = {
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--project-dir", required=True, help="dbt-prosjektet det testes mot")
+    p.add_argument("--project-dir", required=True, help="dbt-the project det testes against")
     p.add_argument("--profiles-dir", default=None)
     p.add_argument("--target", default=None)
     p.add_argument("--manifest", default=None)
     p.add_argument("--catalog", default=None)
-    p.add_argument("--key", default="orgnr", help="Nøkkelkolonne")
-    p.add_argument("--value", default="222", help="Brukes kun sammen med --check")
+    p.add_argument("--key", default="orgnr", help="Key column")
+    p.add_argument("--value", default="222", help="Brukes kun sammen with --check")
     p.add_argument(
         "--from",
         dest="from_node",
@@ -59,15 +59,15 @@ def parse_args() -> argparse.Namespace:
         help="Startnode for hovedtesten",
     )
     p.add_argument(
-        "--no-seeds", action="store_true", help="Slå av seed-traversering (policytest)"
+        "--no-seeds", action="store_true", help="Turn off seed traversal (policy test)"
     )
     p.add_argument(
-        "--no-sources", action="store_true", help="Slå av source-traversering"
+        "--no-sources", action="store_true", help="Turn off source traversal"
     )
     p.add_argument(
         "--check",
         action="store_true",
-        help="Kjør faktiske presence-sjekker på foreldrene (~2,75 s per kall)",
+        help="Run actual presence checks on the parents (~2,75 s per call)",
     )
     return p.parse_args()
 
@@ -118,15 +118,15 @@ def main() -> int:
     catalog = load_catalog(project, required=False)
     if catalog is None:
         print(
-            "\nADVARSEL: catalog.json finnes ikke. Kolonnevalidering (§4) blir "
-            "hoppet over.\n         Kjør 'dbt docs generate' i prosjektet og "
-            "prøv igjen.",
+            "\nWARNING: catalog.json exists inkke. Kolonnevalidering (§4) becomes "
+            "skipped.\n         Run 'dbt docs generate' in the project and "
+            "try again.",
         )
 
     failures: list[str] = []
 
-    # --- Hovedtest: mart_summary skal gi begge foreldre -------------------
-    hdr(f"Hovedtest: foreldre til '{args.from_node}'")
+    # --- Hovedtest: mart_summary should gi begge foreldre -------------------
+    hdr(f"Hovedtest: foreldre to '{args.from_node}'")
     start_uid = find_node(manifest, args.from_node)
     print(f"UID: {start_uid}")
     parents = parents_of(manifest, catalog, start_uid, args.key, policy)
@@ -136,22 +136,22 @@ def main() -> int:
     got = {r.name for r in parents}
     want = EXPECTED_PARENTS.get(args.from_node)
     if want is None:
-        print(f"  (ingen fasit registrert for '{args.from_node}')")
+        print(f"  (no fasit registrert for '{args.from_node}')")
     elif got == want:
-        print(f"  OK: fikk forventede foreldre {sorted(want)}")
+        print(f"  OK: got forventede foreldre {sorted(want)}")
     else:
-        msg = f"{args.from_node}: forventet {sorted(want)}, fikk {sorted(got)}"
+        msg = f"{args.from_node}: forexpected {sorted(want)}, got {sorted(got)}"
         failures.append(msg)
         print(f"  FEIL: {msg}")
 
-    # --- Hele fasit-grafen, ett nivå per node ----------------------------
-    hdr("Foreldre for alle noder i fasit-tabellen")
+    # --- the whole reference graph, one level per node ----------------------------
+    hdr("Foreldre for all nodes in fasit-tabellen")
     for name, want in EXPECTED_PARENTS.items():
         try:
             uid = find_node(manifest, name)
         except RowtraceError as exc:
             failures.append(f"{name}: {exc}")
-            print(f"{name}: FEIL - {exc}")
+            print(f"{name}: ERROR - {exc}")
             continue
         refs = parents_of(manifest, catalog, uid, args.key, policy)
         got = {r.name for r in refs}
@@ -160,10 +160,10 @@ def main() -> int:
         for ref in refs:
             print(fmt_ref(ref))
         if not ok:
-            failures.append(f"{name}: forventet {sorted(want)}, fikk {sorted(got)}")
+            failures.append(f"{name}: forexpected {sorted(want)}, got {sorted(got)}")
 
-    # --- Modellgrensen: stg_customers sin forelder er en seed ------------
-    hdr("Policytest: modellgrensen mot seeds")
+    # --- Modellgrensen: stg_customers sin parent is a seed ------------
+    hdr("Policytest: modellgrensen against seeds")
     stg_uid = find_node(manifest, "stg_customers")
     seed_parents = parents_of(manifest, catalog, stg_uid, args.key, policy)
     for ref in seed_parents:
@@ -174,7 +174,7 @@ def main() -> int:
         if rt == "seed" and ref.checkable != expect_checkable:
             failures.append(
                 f"seed-policy: {ref.name} checkable={ref.checkable}, "
-                f"forventet {expect_checkable}"
+                f"forexpected {expect_checkable}"
             )
 
     # --- Kolonnevalidering ------------------------------------------------
@@ -187,23 +187,23 @@ def main() -> int:
             f"type={ref.key_column_type or '-':<10} checkable={ref.checkable}"
         )
         if catalog is not None and ref.catalog_status == CATALOG_COLUMN_MISSING:
-            failures.append(f"{name}: '{args.key}' mangler i catalog — uventet i fasit")
+            failures.append(f"{name}: '{args.key}' mangler in catalog — uexpected in fasit")
 
-    hdr("Negativ kontroll: ukjent kolonne skal gi missing_key_column")
-    bogus = "kolonne_som_ikke_finnes"
+    hdr("Negativ kontroll: unknown column should gi missing_key_column")
+    bogus = "column_som_ikke_finnes"
     ref = classify_node(manifest, catalog, start_uid, bogus, policy)
     if catalog is None:
-        print("  Hoppet over (ingen catalog lastet).")
+        print("  skipped (no catalog lastet).")
     elif ref.skip_reason == "missing_key_column" and not ref.checkable:
         print(f"  OK: {args.from_node} hoppes over for '{bogus}'")
     else:
-        msg = f"forventet missing_key_column for '{bogus}', fikk {ref.skip_reason!r}"
+        msg = f"forexpected missing_key_column for '{bogus}', got {ref.skip_reason!r}"
         failures.append(msg)
         print(f"  FEIL: {msg}")
 
-    # --- Valgfrie faktiske presence-sjekker ------------------------------
+    # --- Valgfrie actual presence checker ------------------------------
     if args.check:
-        hdr(f"Presence-sjekk av foreldrene til {args.from_node} ({args.key}={args.value})")
+        hdr(f"Presence-sjekk by the parents to {args.from_node} ({args.key}={args.value})")
         for ref in parents:
             res = check_presence_guarded(
                 ref.node_uid,
@@ -225,7 +225,7 @@ def main() -> int:
             print(f"  FEIL: {f}")
         print(f"\n{len(failures)} avvik.")
         return 1
-    print("  Alt stemmer med fasit.")
+    print("  Everything matches reference.")
     return 0
 
 

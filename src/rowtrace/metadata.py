@@ -1,15 +1,15 @@
-"""Steg 2 — metadata-lag (architectur.md §3 lag 1, §4).
+"""Step 2 — metadata layer (architectur.md §3 layer 1, §4).
 
-Ansvar:
-  - lese manifest.json og catalog.json
-  - oversette kortnavn til node-UID (beslutning B: UID er primærnøkkel internt)
-  - finne direkte foreldre for en node
-  - validere at nøkkelkolonnen finnes i noden før presence sjekkes
+Responsibilities:
+  - read manifest.json and catalog.json
+  - translate short names to node UIDs (decision B: UID is primary key internally)
+  - find direct parents for a node
+  - validate that the key column exists in the node before presence is checked
 
-Traverseringspolicy (avklart i steg 2): grensen for hva som kan sjekkes går
-ikke ved resource_type, men ved om noden har en spørrbar relasjon. Seeds,
-sources og snapshots har relation_name og sjekkes som modeller. Efemere
-modeller har det ikke — de hoppes over i sjekk, men traverseres gjennom.
+Traversal policy (clarified in step 2): the boundary for what can be checked
+doesn't go by resource_type, but by whether the node has a queryable relation. Seeds,
+sources and snapshots have relation_name and are checked like models. Ephemeral
+models don't — they are skipped in checking, but traversed through.
 """
 
 from __future__ import annotations
@@ -27,21 +27,21 @@ from .project import DbtProject, MetadataError
 
 TRAVERSABLE_TYPES = ("model", "seed", "source", "snapshot")
 
-#: Noder som aldri har foreldre. Traversering stopper her uansett policy.
+#: Nodes that never have parents. Traversal stops here regardless of policy.
 TERMINAL_TYPES = ("seed", "source")
 
 
 @dataclass(frozen=True)
 class TraversalPolicy:
-    """Hva traverseringen får følge inn i.
+    """What the traversal is allowed to follow into.
 
-    Standardene er 'på' fordi feilmodusen ved å inkludere en node er synlig
-    (én ekstra spørring, eventuelt en skipped_query_error i rapporten), mens
-    feilmodusen ved å utelate den er et stille avkortet svar.
+    The defaults are 'on' because the failure mode of including a node is visible
+    (one extra query, possibly a skipped_query_error in the report), while
+    the failure mode of excluding it is a silent truncated answer.
 
-    include_sources kan slås av mot warehouse der en usfiltrert count mot en
-    rå kildetabell er dyr (BigQuery, Snowflake). Blir --no-source-checks i
-    steg 8.
+    include_sources can be turned off against warehouses where an unfiltered count
+    against a raw source table is expensive (BigQuery, Snowflake). Becomes
+    --no-source-checks in step 8.
     """
 
     include_seeds: bool = True
@@ -57,16 +57,16 @@ class TraversalPolicy:
 def _load_json(path, what: str) -> dict[str, Any]:
     if not path.is_file():
         hint = (
-            "Kjør 'dbt compile' eller 'dbt build' i prosjektet."
+            "Run 'dbt compile' or 'dbt build' in the project."
             if what == "manifest"
-            else "Kjør 'dbt docs generate' i prosjektet."
+            else "Run 'dbt docs generate' in the project."
         )
-        raise MetadataError(f"Fant ikke {what}: {path}. {hint}")
+        raise MetadataError(f"Did not find {what}: {path}. {hint}")
     try:
         with path.open(encoding="utf-8") as fh:
             return json.load(fh)
     except json.JSONDecodeError as exc:
-        raise MetadataError(f"Kunne ikke parse {what} {path}: {exc}") from exc
+        raise MetadataError(f"Could not parse {what} {path}: {exc}") from exc
 
 
 def load_manifest(project: DbtProject) -> dict[str, Any]:
@@ -74,16 +74,16 @@ def load_manifest(project: DbtProject) -> dict[str, Any]:
 
 
 def load_catalog(project: DbtProject, *, required: bool = True) -> dict[str, Any] | None:
-    """Catalog er valgfri i den forstand at presence fortsatt virker uten den.
+    """Catalog is optional in the sense that presence still works without it.
 
-    Uten catalog kan vi ikke skille 'kolonnen finnes ikke' fra 'vi vet ikke'.
-    Kallere som tåler det sender required=False og får None.
+    Without catalog we can't distinguish 'column doesn't exist' from 'we don't know'.
+    Callers that can tolerate this send required=False and get None.
     """
     if not project.catalog_file.is_file():
         if required:
             raise MetadataError(
-                f"Fant ikke catalog: {project.catalog_file}. "
-                "Kjør 'dbt docs generate' i prosjektet."
+                f"Did not find catalog: {project.catalog_file}. "
+                "Run 'dbt docs generate' in the project."
             )
         return None
     return _load_json(project.catalog_file, "catalog")
@@ -95,22 +95,22 @@ def load_catalog(project: DbtProject, *, required: bool = True) -> dict[str, Any
 
 
 def resource_type_of(node_uid: str) -> str:
-    """Utled ressurstype fra UID-prefikset. dbt garanterer formen
-    '<type>.<pakke>.<navn>' (sources har fire ledd).
+    """Derive resource type from UID prefix. dbt guarantees the form
+    '<type>.<package>.<name>' (sources have four parts).
     """
     return node_uid.split(".", 1)[0]
 
 
 def lookup_node(manifest: dict[str, Any], node_uid: str) -> dict[str, Any]:
-    """Sources ligger i manifest['sources'], ikke i manifest['nodes'].
+    """Sources are in manifest['sources'], not in manifest['nodes'].
 
-    Dette er en enkel, men lett oversett detalj: seeds og snapshots ligger
-    under 'nodes' sammen med modellene, sources gjør det ikke.
+    This is a simple but easily overlooked detail: seeds and snapshots are
+    under 'nodes' together with models, sources are not.
     """
     bucket = "sources" if resource_type_of(node_uid) == "source" else "nodes"
     node = manifest.get(bucket, {}).get(node_uid)
     if node is None:
-        raise MetadataError(f"Node '{node_uid}' finnes ikke i manifestet ({bucket}).")
+        raise MetadataError(f"Node '{node_uid}' does not exist in manifest ({bucket}).")
     return node
 
 
@@ -119,13 +119,13 @@ def find_node(
     name: str,
     resource_types: Iterable[str] = ("model",),
 ) -> str:
-    """Beslutning B: eneste sted kortnavn -> UID skjer.
+    """Decision B: only place short name -> UID happens.
 
-    Er 'name' allerede en UID, valideres den bare. Tvetydige kortnavn
-    (samme modellnavn i flere pakker) avvises framfor å gjettes på.
+    If 'name' is already a UID, it's just validated. Ambiguous short names
+    (same model name in multiple packages) are rejected rather than guessed.
     """
     if resource_type_of(name) in TRAVERSABLE_TYPES:
-        lookup_node(manifest, name)  # kaster hvis ukjent
+        lookup_node(manifest, name)  # raises if unknown
         return name
 
     wanted = set(resource_types)
@@ -137,12 +137,12 @@ def find_node(
 
     if not matches:
         raise MetadataError(
-            f"Fant ingen {'/'.join(sorted(wanted))} med navn eller UID '{name}'."
+            f"Found no {'/'.join(sorted(wanted))} with name or UID '{name}'."
         )
     if len(matches) > 1:
         raise MetadataError(
-            f"Navnet '{name}' er tvetydig (flere pakker): "
-            f"{', '.join(sorted(matches))}. Oppgi full node-UID."
+            f"Name '{name}' is ambiguous (multiple packages): "
+            f"{', '.join(sorted(matches))}. Provide full node UID."
         )
     return matches[0]
 
@@ -152,18 +152,18 @@ def is_ephemeral(node: dict[str, Any]) -> bool:
 
 
 def relation_for(manifest: dict[str, Any], node_uid: str) -> str:
-    """Ferdig kvalifisert og quotet relasjonsnavn fra dbt selv.
+    """Fully qualified and quoted relation name from dbt itself.
 
-    Vi bygger den aldri fra database/schema/alias — da ville vi tatt på oss
-    dialekt- og quoting-ansvar dbt allerede har løst.
+    We never build it from database/schema/alias — that would take on
+    dialect and quoting responsibility dbt has already solved.
     """
     node = lookup_node(manifest, node_uid)
     relation = node.get("relation_name")
     if not relation:
         materialized = node.get("config", {}).get("materialized")
         raise MetadataError(
-            f"Node '{node_uid}' mangler relation_name (materialisering={materialized!r}). "
-            "Efemere modeller kan ikke presence-sjekkes direkte."
+            f"Node '{node_uid}' lacks relation_name (materialization={materialized!r}). "
+            "Ephemeral models cannot be presence-checked directly."
         )
     return relation
 
@@ -176,11 +176,11 @@ def display_name(manifest: dict[str, Any], node_uid: str) -> str:
 # Catalog: kolonnevalidering (architectur.md §4)
 # --------------------------------------------------------------------------
 
-#: Utfall av catalog-oppslaget for en node.
-#:   ok            - noden finnes i catalog og har nøkkelkolonnen
-#:   column_missing- noden finnes i catalog, kolonnen gjør ikke -> hopp over
-#:   node_absent   - noden finnes ikke i catalog (stale/ikke bygget) -> sjekk likevel
-#:   no_catalog    - ingen catalog lastet i det hele tatt -> sjekk likevel
+#: Outcome of catalog lookup for a node.
+#:   ok            - node exists in catalog and has the key column
+#:   column_missing- node exists in catalog, column doesn't -> skip
+#:   node_absent   - node doesn't exist in catalog (stale/not built) -> check anyway
+#:   no_catalog    - no catalog loaded at all -> check anyway
 CATALOG_OK = "ok"
 CATALOG_COLUMN_MISSING = "column_missing"
 CATALOG_NODE_ABSENT = "node_absent"
@@ -197,16 +197,16 @@ def catalog_entry(catalog: dict[str, Any] | None, node_uid: str) -> dict[str, An
 def key_column_status(
     catalog: dict[str, Any] | None, node_uid: str, key_column: str
 ) -> tuple[str, str | None]:
-    """Returnerer (status, resolved_type).
+    """Returns (status, resolved_type).
 
-    Asymmetrien er bevisst: 'noden finnes i catalog, men kolonnen gjør ikke'
-    er et sikkert negativ og gir skipped_missing_key_column. 'Noden finnes
-    ikke i catalog' er derimot fravær av kunnskap — typisk fordi
-    dbt docs generate ikke er kjørt etter siste build — og skal ikke stille
-    kutte noden ut av traverseringen. Da sjekker vi og legger på en advarsel.
+    The asymmetry is deliberate: 'node exists in catalog but column doesn't'
+    is a certain negative and results in skipped_missing_key_column. 'Node doesn't
+    exist in catalog' is lack of knowledge — typically because
+    dbt docs generate wasn't run after the last build — and should not
+    cut the node out of traversal. Then we check and add a warning.
 
-    Kolonnenavn matches case-insensitivt fordi catalog bevarer warehousets
-    casing (DuckDB små, Snowflake store).
+    Column names are matched case-insensitively because catalog preserves warehouse
+    casing (DuckDB lowercase, Snowflake uppercase).
     """
     if catalog is None:
         return CATALOG_NO_CATALOG, None
@@ -229,10 +229,10 @@ def key_column_status(
 
 @dataclass(frozen=True)
 class NodeRef:
-    """Én node slik traverseringslaget trenger å se den.
+    """One node as the traversal layer needs to see it.
 
-    skip_reason-verdiene er valgt for å kunne mappes rett til presence-enumet
-    i architectur.md §12.4 når outputkontrakten låses i steg 7:
+    skip_reason values are chosen to map directly to the presence enum
+    in architectur.md §12.4 when the output contract is locked in step 7:
       missing_key_column -> skipped_missing_key_column
     """
 
@@ -256,8 +256,8 @@ def classify_node(
     key_column: str,
     policy: TraversalPolicy = TraversalPolicy(),
 ) -> NodeRef:
-    """Avgjør om noden kan presence-sjekkes, og om traverseringen skal
-    fortsette gjennom den. Gjør ingen spørringer.
+    """Determines if the node can be presence-checked, and if traversal should
+    continue through it. Makes no queries.
     """
     rtype = resource_type_of(node_uid)
     node = lookup_node(manifest, node_uid)
@@ -288,8 +288,8 @@ def classify_node(
     if rtype == "snapshot" and not policy.include_snapshots:
         return _skip("excluded_by_policy", through=True)
 
-    # Efemer: ingen relasjon å spørre mot, men foreldrene er fortsatt
-    # relevante. Traverser gjennom uten å sjekke.
+    # Ephemeral: no relation to query against, but parents are still
+    # relevant. Traverse through without checking.
     if rtype == "model" and is_ephemeral(node):
         return _skip("ephemeral", through=True)
 
@@ -313,11 +313,11 @@ def classify_node(
         )
     if status == CATALOG_NODE_ABSENT:
         warnings.append(
-            f"{name}: ikke i catalog.json — kolonnevalidering hoppet over. "
-            "Kjør 'dbt docs generate' hvis dette er uventet."
+            f"{name}: not in catalog.json — column validation skipped. "
+            "Run 'dbt docs generate' if this is unexpected."
         )
     elif status == CATALOG_NO_CATALOG:
-        warnings.append(f"{name}: ingen catalog lastet — kolonnevalidering hoppet over.")
+        warnings.append(f"{name}: no catalog loaded — column validation skipped.")
 
     return NodeRef(
         node_uid=node_uid,
@@ -335,7 +335,7 @@ def classify_node(
 
 
 def parent_uids(manifest: dict[str, Any], node_uid: str) -> list[str]:
-    """Rå depends_on.nodes, uten filtrering. Rekkefølge fra manifestet bevares."""
+    """Raw depends_on.nodes, without filtering. Order from manifest is preserved."""
     node = lookup_node(manifest, node_uid)
     return list(node.get("depends_on", {}).get("nodes", []))
 
@@ -347,8 +347,8 @@ def parents_of(
     key_column: str,
     policy: TraversalPolicy = TraversalPolicy(),
 ) -> list[NodeRef]:
-    """Direkte foreldre, klassifisert. Steg 2 gjør kun ett nivå;
-    steg 3 kaller denne rekursivt.
+    """Direct parents, classified. Step 2 does only one level;
+    step 3 calls this recursively.
     """
     if resource_type_of(node_uid) in TERMINAL_TYPES:
         return []
@@ -358,10 +358,10 @@ def parents_of(
     ]
 
 # --------------------------------------------------------------------------
-# Kompilert SQL (steg 5+6: joins.py, filters.py)
+# Compiled SQL (step 5+6: joins.py, filters.py)
 # --------------------------------------------------------------------------
 
-#: node['resource_type'] -> undermappe i target/compiled/<package>/<her>/
+#: node['resource_type'] -> subdirectory in target/compiled/<package>/<here>/
 _COMPILED_SUBDIR = {
     "model": "models",
     "snapshot": "snapshots",
@@ -380,31 +380,31 @@ def compiled_path_for_node(project: DbtProject, node: dict[str, Any]) -> "Path |
 def compiled_sql_for_node(
     project: DbtProject, node: dict[str, Any]
 ) -> tuple[str | None, str | None]:
-    """Kompilert SQL for én node.
+    """Compiled SQL for one node.
 
-    Leser fra target/compiled/... på disk fremfor manifest['compiled_code'].
-    Grunn (funnet under steg 5): hver 'dbt show --inline' (én per
-    presence-sjekk) skriver et ferskt manifest.json som del av kommandoen,
-    men kompilerer kun sin egen ad-hoc-spørring — compiled_code for vanlige
-    modeller blir borte fra manifest.json på disk igjen etter en
-    traversering. Filene i target/compiled/ er upåvirket av dette.
+    Reads from target/compiled/... on disk rather than manifest['compiled_code'].
+    Reason (found during step 5): each 'dbt show --inline' (one per
+    presence check) writes a fresh manifest.json as part of the command,
+    but only compiles its own ad-hoc query — compiled_code for regular
+    models disappears from manifest.json on disk again after a
+    traversal. The files in target/compiled/ are unaffected by this.
 
-    Returnerer (sql, kilde_note). kilde_note er None ved normal fil-lesning,
-    satt til en forklaring ved fallback til manifestet eller ved feil.
+    Returns (sql, source_note). source_note is None for normal file reading,
+    set to an explanation on fallback to manifest or on error.
     """
     path = compiled_path_for_node(project, node)
     if path is not None and path.is_file():
         try:
             return path.read_text(encoding="utf-8"), None
         except OSError as exc:
-            return None, f"Kunne ikke lese {path}: {exc}"
+            return None, f"Could not read {path}: {exc}"
 
     fallback = node.get("compiled_code")
     if fallback:
         note = (
-            f"target/compiled-fil ikke funnet ({path}); brukte "
-            "manifest['compiled_code'] i stedet. Kan være stalt hvis "
-            "traversering har kjørt siden siste 'dbt compile'."
+            f"target/compiled file not found ({path}); used "
+            "manifest['compiled_code'] instead. May be stale if "
+            "traversal has run since last 'dbt compile'."
         )
         return fallback, note
 

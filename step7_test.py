@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Steg 7 manuell test: bygg og valider det komplette JSON-dokumentet.
+"""step 7 manual test: bygg and valider det komplette JSON-dokumentet.
 
-Kjør:
+Run:
     python step7_test.py --project-dir testproject --profiles-dir testproject --value 222
     python step7_test.py --project-dir testproject --profiles-dir testproject --value 666
     python step7_test.py --project-dir testproject --profiles-dir testproject --value 111
     python step7_test.py --project-dir testproject --profiles-dir testproject --value 222 --print
 
-Sjekker KUN det som er nytt i steg 7 (schema_version, status, join.role i
-det serialiserte dokumentet) — selve konklusjonene er allerede fasit-testet
-i step4/5/6_test.py, ikke dupliser det her.
+Sjekker KUN det that is nytt in step 7 (schema_version, status, join.role in
+det serialiserte dokumentet) — selve konklusjonene is allerede fasit-testet
+in step4/5/6_test.py, ikke dupliser det her.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--from", dest="from_node", default="mart_summary")
     p.add_argument("--dialect", default="duckdb")
     p.add_argument("--include-checked", action="store_true")
-    p.add_argument("--print", action="store_true", help="Skriv ut hele JSON-dokumentet")
+    p.add_argument("--print", action="store_true", help="Skriv ut the whole JSON-dokumentet")
     return p.parse_args()
 
 
@@ -103,23 +103,23 @@ def main() -> int:
     try:
         text = json.dumps(doc, indent=2, ensure_ascii=False)
     except TypeError as exc:
-        print(f"  FEIL: dokumentet er ikke JSON-serialiserbart: {exc}")
+        print(f"  FEIL: dokumentet is ikke JSON-serialiserbart: {exc}")
         return 1
-    print(f"  OK, {len(text)} tegn.")
+    print(f"  OK, {len(text)} characters.")
     if args.print:
         print(text)
 
     failures: list[str] = []
     expected = EXPECTED.get(args.value) if args.from_node == "mart_summary" else None
 
-    hdr("Fasit-sammenligning (kun steg 7-spesifikke felt)")
+    hdr("Fasit-sammenligning (kun step 7-spesifikke felt)")
     if expected is None:
-        print(f"  Ingen fasit registrert for {args.from_node} / {args.value}.")
+        print(f"  no fasit registrert for {args.from_node} / {args.value}.")
     else:
         if doc["schema_version"] != "1.0":
-            failures.append(f"schema_version: forventet '1.0', fikk {doc['schema_version']!r}")
+            failures.append(f"schema_version: forexpected '1.0', got {doc['schema_version']!r}")
         if doc["status"] != expected["status"]:
-            failures.append(f"status: forventet {expected['status']!r}, fikk {doc['status']!r}")
+            failures.append(f"status: forexpected {expected['status']!r}, got {doc['status']!r}")
 
         got_roles: dict[str, dict[str, str]] = {}
         for b in doc["boundaries"]:
@@ -129,10 +129,10 @@ def main() -> int:
 
         if got_roles != expected["boundary_roles"]:
             failures.append(
-                f"boundary_roles: forventet {expected['boundary_roles']}, fikk {got_roles}"
+                f"boundary_roles: forexpected {expected['boundary_roles']}, got {got_roles}"
             )
         if not failures:
-            print("  Alt stemmer med fasit.")
+            print("  Everything matches reference.")
 
     hdr("Oppsummering")
     if failures:
@@ -148,5 +148,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RowtraceError as exc:
-        print(f"\nVerktøyfeil: {exc}", file=sys.stderr)
+        print(f"\nTool error: {exc}", file=sys.stderr)
         sys.exit(2)

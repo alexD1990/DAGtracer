@@ -1,15 +1,15 @@
-"""Eksekveringslag (architectur.md §3 lag 3, §6).
+"""Execution layer (architectur.md §3 layer 3, §6).
 
-Metadata-ansvaret er flyttet til rowtrace/metadata.py i steg 2. Denne filen
-eier nå kun veien fra (relasjon, kolonne, verdi) til en bool.
+Metadata responsibility is moved to rowtrace/metadata.py in step 2. This file
+now owns only the path from (relation, column, value) to a bool.
 
-Beslutninger som styrer filen (docs/byggeplan.md):
-  A - check_presence(node_uid, key_column, value) -> bool er grensesnittet.
-      Innmaten (subprocess her) skal kunne byttes til dbtRunner uten at
-      kallere røres. Revurderes etter steg 3, ikke før.
-  B - node-UID er primærnøkkel internt.
-  C - verdien er alltid str, og blir SQL-literal i nøyaktig én funksjon.
-  E - prosjektsti og profilsti er parametere, aldri konstanter.
+Decisions guiding the file (docs/byggeplan.md):
+  A - check_presence(node_uid, key_column, value) -> bool is the interface.
+      The internals (subprocess here) should be replaceable with dbtRunner without
+      callers being touched. Reconsidered after step 3, not before.
+  B - node UID is primary key internally.
+  C - value is always str, and becomes SQL literal in exactly one function.
+  E - project path and profile path are parameters, never constants.
 """
 
 from __future__ import annotations
@@ -30,8 +30,8 @@ from .metadata import (
 )
 from .project import DbtProject, MetadataError, PresenceError, RowtraceError
 
-# Bakoverkompatible re-eksporter, slik at step1_test.py fortsatt går.
-# Nye kallere bør importere disse fra rowtrace.metadata / rowtrace.project.
+# Backward-compatible re-exports, so step1_test.py still works.
+# New callers should import these from rowtrace.metadata / rowtrace.project.
 from .metadata import find_node as find_model  # noqa: F401
 
 __all__ = [
@@ -51,7 +51,7 @@ __all__ = [
 
 @dataclass(frozen=True)
 class PresenceResult:
-    """Detaljert utfall. check_presence() koker dette ned til en bool."""
+    """Detailed outcome. check_presence() boils this down to a bool."""
 
     node_uid: str
     relation: str
@@ -63,9 +63,9 @@ class PresenceResult:
 
 @dataclass(frozen=True)
 class GuardedResult:
-    """Resultat der noden kan ha blitt hoppet over før spørring.
+    """Result where the node may have been skipped before querying.
 
-    status følger presence-enumet i architectur.md §12.4 så langt det er
+    status follows presence-enumet i architectur.md §12.4 so langt det is
     definert i dag: present | absent | skipped_missing_key_column |
     skipped_query_error | unknown.
     """
@@ -82,54 +82,54 @@ class GuardedResult:
 
 
 # --------------------------------------------------------------------------
-# Identifikator og literal - det dialektfølsomme punktet
+# Identifier and literal - the dialect-sensitive point
 # --------------------------------------------------------------------------
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def quote_ident(name: str, style: str = "adapter") -> str:
-    """Quote et kolonnenavn.
+    """Quote a column name.
 
-    style="adapter" (standard) genererer Jinja som lener seg på dbt sin egen
-    adapter (architectur.md §6) - dbt show --inline kompilerer Jinja, så
-    dette virker allerede fra steg 1. Ikke hardkod quoting i Python.
-    style="plain" gir rå dobbeltfnutt, kun for feilsøking av generert SQL.
+    style="adapter" (default) generates Jinja that leans on dbt's egen
+    adapter (architectur.md §6) - dbt show --inline compiles Jinja, so
+    this already works from step 1. Don't hardcode quoting in Python.
+    style="plain" gives raw double quotes, only for debugging by generated SQL.
     """
     if not _IDENT_RE.match(name):
         raise PresenceError(
-            f"Ugyldig kolonnenavn {name!r}. Tillatt: bokstav/understrek etterfulgt "
-            "av bokstaver, tall eller understrek."
+            f"Invalid column name {name!r}. Allowed: letter/underscore followed by "
+            "by letterer, digits or underscore."
         )
     if style == "adapter":
         return '{{ adapter.quote("' + name + '") }}'
     if style == "plain":
         return f'"{name}"'
-    raise PresenceError(f"Ukjent quote-style: {style!r}")
+    raise PresenceError(f"Unknown quote-style: {style!r}")
 
 
-# Beslutning C: whitelist-versjon. Bevisst restriktiv - den utvides når et
-# reelt prosjekt trenger det, ikke i forkant. Alt som ikke matcher avvises
-# høylytt framfor å bli escapet på gjettet dialektvis.
+# Decision C: whitelist version. Deliberately restrictive - den is extended when a
+# real project needs it, ikke in advance. Alt that ikke matches is rejected
+# loudly rather than being escaped in guessed dialect-specific way.
 _VALUE_RE = re.compile(r"^[A-Za-z0-9_\-.:+/ ]{1,256}$")
 
 
 def sql_literal(value: str) -> str:
-    """Eneste sted en nøkkelverdi blir til SQL. Ikke dupliser denne logikken.
+    """Only place en key value becomes to SQL. Don't duplicate this logic.
 
-    Verdien sendes alltid som strengliteral. Warehouset caster selv mot
-    tallkolonner; det er tryggere enn at Python gjetter kolonnetypen.
-    resolved_type fra catalog (steg 2) eksponeres i output, men styrer
-    bevisst *ikke* literal-formen — se GuardedResult.key_column_type.
+    Value is sent always as string literal. Warehouse casts itself against
+    numeric columns; det is safer than that Python guesses the column type.
+    resolved_type from catalog (step 2) exposed i output, but controls
+    deliberately *ikke* literal form — se GuardedResult.key_column_type.
     """
     if not isinstance(value, str):
         raise PresenceError(
-            f"Verdien må være str (beslutning C), fikk {type(value).__name__}."
+            f"Value must be str (decision C), got {type(value).__name__}."
         )
     if not _VALUE_RE.match(value):
         raise PresenceError(
-            f"Verdien {value!r} inneholder tegn utenfor whitelisten "
-            "(A-Z a-z 0-9 _ - . : + / mellomrom, maks 256 tegn)."
+            f"Value {value!r} contains characters outside whitelist "
+            "(A-Z a-z 0-9 _ - . : + / space, max 256 characters)."
         )
     return f"'{value}'"
 
@@ -144,7 +144,7 @@ def build_presence_sql(
 
 
 # --------------------------------------------------------------------------
-# Eksekveringslag
+# Execution layer
 # --------------------------------------------------------------------------
 
 
@@ -168,11 +168,11 @@ def _dbt_show_args(project: DbtProject, sql: str) -> list[str]:
 
 
 def run_dbt_show(project: DbtProject, sql: str, timeout: int = 120) -> tuple[str, float]:
-    """Kjør SQL via dbt. Returnerer (stdout, sekunder brukt).
+    """Run SQL via dbt. Returns (stdout, seconds used).
 
-    cwd settes til project_dir fordi relative stier i profiles.yml (f.eks.
-    DuckDB sin 'path: testproject.duckdb') løses mot arbeidskatalogen, ikke
-    mot --project-dir. Uten dette peker adapteren på feil/tom database.
+    cwd is set to project_dir because relative paths i profiles.yml (e.g.
+    DuckDB sin 'path: testproject.duckdb') are resolved against working directory, ikke
+    against --project-dir. Uten this points adapteren on wrong/empty database.
     """
     args = _dbt_show_args(project, sql)
     started = time.perf_counter()
@@ -185,29 +185,29 @@ def run_dbt_show(project: DbtProject, sql: str, timeout: int = 120) -> tuple[str
             timeout=timeout,
         )
     except FileNotFoundError as exc:
-        raise PresenceError("Fant ikke 'dbt' på PATH.") from exc
+        raise PresenceError("'dbt' not found on PATH.") from exc
     except subprocess.TimeoutExpired as exc:
-        raise PresenceError(f"dbt show tidsavbrutt etter {timeout}s.") from exc
+        raise PresenceError(f"dbt show timed out after {timeout}s.") from exc
     elapsed = time.perf_counter() - started
 
     if proc.returncode != 0:
         tail = (proc.stderr or proc.stdout or "").strip()[-1500:]
         raise PresenceError(
-            f"dbt show feilet (exit {proc.returncode}).\nSQL: {sql}\n--- output ---\n{tail}"
+            f"dbt show failed (exit {proc.returncode}).\nSQL: {sql}\n--- output ---\n{tail}"
         )
     return proc.stdout, elapsed
 
 
 def parse_count(stdout: str) -> int:
-    """Plukk ut count-verdien fra dbt sin JSON-output.
+    """Extract the count value from dbt's JSON-output.
 
-    dbt pretty-printer objektet over flere linjer, så vi kan ikke parse
-    linjevis. Ikke gjeninnfør linjevis parsing. I stedet skannes stdout etter
-    hvert '{' og forsøkes dekodet med raw_decode; første objekt med en
-    rad-liste vinner.
+    dbt pretty-prints the object over multiple lines, so we can't parse
+    line by line. Ikke re-introduce line by line parsing. I instead is scanned stdout after
+    each '{' and is attempted decoded with raw_decode; first object with en
+    row list wins.
 
-    Verdien hentes posisjonelt (første kolonne i første rad), fordi
-    kolonnenavnets casing varierer mellom warehouse.
+    Value is fetched positionally (first column i first rad), because
+    column nameets casing varies between warehouse.
     """
     decoder = json.JSONDecoder()
     idx = stdout.find("{")
@@ -231,18 +231,18 @@ def parse_count(stdout: str) -> int:
                 try:
                     return int(raw)
                 except (TypeError, ValueError) as exc:
-                    raise PresenceError(f"Uventet count-verdi fra dbt: {raw!r}") from exc
+                    raise PresenceError(f"Uexpected count-verdi from dbt: {raw!r}") from exc
 
         idx = stdout.find("{", end)
 
     raise PresenceError(
-        "Fant ingen JSON-resultatobjekt i dbt sin output.\n--- stdout ---\n"
+        "Fant no JSON-resultatobject i dbt's output.\n--- stdout ---\n"
         + stdout.strip()[-1500:]
     )
 
 
 # --------------------------------------------------------------------------
-# Beslutning A: det stabile grensesnittet
+# Decision A: det stabile grensesnittet
 # --------------------------------------------------------------------------
 
 
@@ -281,8 +281,8 @@ def check_presence(
     quote_style: str = "adapter",
     timeout: int = 120,
 ) -> bool:
-    """Beslutning A. Signaturen holdes stabil; innmaten kan byttes til
-    dbtRunner eller direkte adapter-kall uten at kallere endres.
+    """Decision A. Signaturen holdes stabil; innmaten can byttes to
+    dbtRunner or direct adapter-kall uten at kallere endres.
     """
     return check_presence_detailed(
         node_uid,
@@ -307,12 +307,12 @@ def check_presence_guarded(
     quote_style: str = "adapter",
     timeout: int = 120,
 ) -> GuardedResult:
-    """Presence-sjekk med catalog-validering foran (architectur.md §4).
+    """Presence-sjekk with catalog-validering foran (architectur.md §4).
 
-    Dette er funksjonen traverseringen i steg 3 skal kalle. Den kaster ikke
-    på spørringsfeil, men returnerer skipped_query_error, slik at én uleselig
-    node ikke river ned hele traverseringen. Verktøyfeil på metadatanivå
-    kastes fortsatt.
+    Dette is funksjonen the traversal i step 3 should kalle. Den kaster ikke
+    on query error, but returns skipped_query_error, so that one unreadable
+    node ikke tear down the entire the traversal. Tool error on metadata level
+    kastes still.
     """
     ref = classify_node(manifest, catalog, node_uid, key_column, policy)
 

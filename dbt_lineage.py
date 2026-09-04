@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Kjørbar inngang til dbt-lineage CLI-et i dette (uinstallerte) repoet.
+"""Runnable entry point to the dbt-lineage CLI in this (uninstalled) repo.
 
-Kjør:
+Run:
     python dbt_lineage.py trace --key orgnr --value 222 --from mart_summary \
         --project-dir testproject --profiles-dir testproject
 
-Når verktøyet pakkes for PyPI (architectur.md §10/§11, senere fase) blir
-dette en konsoll-script entry point ('dbt-lineage = rowtrace.cli:main' i
-pyproject.toml) og denne fila blir overflødig. Steg 8 sitt omfang er selve
-CLI-logikken (cli.py), ikke pakking - denne fila er kun midlertidig lim.
+When the tool is packaged for PyPI (architectur.md §10/§11, later phase), this
+becomes a console-script entry point ('dbt-lineage = rowtrace.cli:main' in
+pyproject.toml) and this file becomes redundant. Step 8's scope is the
+CLI logic itself (cli.py), not packaging - this file is only temporary glue.
 """
 
 from __future__ import annotations

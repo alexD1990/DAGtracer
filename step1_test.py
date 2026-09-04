@@ -1,11 +1,11 @@
-"""Steg 1: verifiser check_presence() mot kjent fasit i testproject/.
+"""step 1: verify check_presence() against known reference in testproject/.
 
-Kjør fra repo-roten:
+Run from repo root:
     python step1_test.py
     python step1_test.py --project-dir testproject --profiles-dir testproject
     python step1_test.py --orgnr 222 --quote-style plain --show-sql
 
-Skriver ingenting og endrer ingenting - kjører kun count-spørringer.
+Writes nothing and changes nothing - only runs count queries.
 """
 
 from __future__ import annotations
@@ -34,12 +34,12 @@ MODELS = [
     "mart_summary",
 ]
 
-# Fasit utledet fra seeds/raw_*.csv og models/**/*.sql.
-# True = verdien skal finnes i modellen.
+# Fasit derived from seeds/raw_*.csv and models/**/*.sql.
+# True = the value should exists in the model.
 FASIT: dict[str, dict[str, bool]] = {
-    # Kontrollverdi: ordre 1001 er ACTIVE og eneste rad for order_id 1001.
+    # Control value: order 1001 is ACTIVE and only row for order_id 1001.
     "111": {m: True for m in MODELS},
-    # Kunde uten ordre: faller ut i INNER JOIN, finnes aldri i ordrekjeden.
+    # Customer without ordre: faller ut in INNER JOIN, exists aldri in order chain.
     "222": {
         "stg_customers": True,
         "stg_orders": False,
@@ -48,7 +48,7 @@ FASIT: dict[str, dict[str, bool]] = {
         "prep_deduped": False,
         "mart_summary": False,
     },
-    # CANCELLED-ordre: filtreres bort av where status = 'ACTIVE'.
+    # CANCELLED order: filtered out by where status = 'ACTIVE'.
     "333": {
         "stg_customers": True,
         "stg_orders": True,
@@ -57,7 +57,7 @@ FASIT: dict[str, dict[str, bool]] = {
         "prep_deduped": False,
         "mart_summary": False,
     },
-    # Taper dedup på order_id 1002 mot 555, men finnes fortsatt i mart_summary.
+    # Loses dedup on order_id on order_id 1002 against against 555, but still exists in mart_summary.
     "444": {
         "stg_customers": True,
         "stg_orders": True,
@@ -66,7 +66,7 @@ FASIT: dict[str, dict[str, bool]] = {
         "prep_deduped": False,
         "mart_summary": True,
     },
-    # Finnes overalt oppstrøms; fjernes av EXCEPT i mart_summary selv.
+    # Exists everywhere upstream; removed by EXCEPT in mart_summary itself.
     "555": {
         "stg_customers": True,
         "stg_orders": True,
@@ -79,8 +79,8 @@ FASIT: dict[str, dict[str, bool]] = {
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Steg 1 - presence-sjekk mot fasit.")
-    # Beslutning E: stier er parametere, med testprosjektet kun som default.
+    p = argparse.ArgumentParser(description="step 1 - presence check against reference.")
+    # Decision E: paths are parameters, with test project only as default.
     p.add_argument("--project-dir", default="testproject")
     p.add_argument("--profiles-dir", default="testproject")
     p.add_argument("--target", default=None)
@@ -89,11 +89,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--orgnr",
         action="append",
-        help="Kjør kun disse verdiene (kan gjentas). Standard: alle fem.",
+        help="Run only these the values (can repeated). Default: all five.",
     )
-    p.add_argument("--model", action="append", help="Kjør kun disse modellene.")
+    p.add_argument("--model", action="append", help="Run only these models.")
     p.add_argument("--quote-style", choices=["adapter", "plain"], default="adapter")
-    p.add_argument("--show-sql", action="store_true", help="Skriv generert SQL per kall.")
+    p.add_argument("--show-sql", action="store_true", help="Print generated SQL per call.")
     return p.parse_args()
 
 
@@ -106,22 +106,22 @@ def main() -> int:
         )
         manifest = load_manifest(project)
     except PresenceError as exc:
-        print(f"OPPSETTSFEIL: {exc}", file=sys.stderr)
+        print(f"SETUP ERROR: {exc}", file=sys.stderr)
         return 2
 
     values = args.orgnr or sorted(FASIT)
     models = args.model or MODELS
 
-    print(f"prosjekt : {project.project_dir}")
+    print(f"project : {project.project_dir}")
     print(f"profiler : {project.profiles_dir or '(dbt default)'}")
-    print(f"target   : {project.target or '(profilens default)'}")
+    print(f"target   : {project.target or '(profile default)'}")
     print(f"manifest : {project.manifest_file}")
-    print(f"nøkkel   : {args.key}   quoting: {args.quote_style}\n")
+    print(f"key     : {args.key}   quoting: {args.quote_style}\n")
 
     try:
         uids = {name: find_model(manifest, name) for name in models}
     except PresenceError as exc:
-        print(f"OPPSETTSFEIL: {exc}", file=sys.stderr)
+        print(f"SETUP ERROR: {exc}", file=sys.stderr)
         return 2
 
     header = f"{'verdi':<7}{'modell':<24}{'faktisk':<10}{'fasit':<10}{'':<6}{'sek':>7}"
@@ -154,13 +154,13 @@ def main() -> int:
             expected = expected_row.get(name)
             actual_txt = "present" if res.present else "absent"
             if expected is None:
-                mark, expected_txt = "?", "ukjent"
+                mark, expected_txt = "?", "unknown"
             elif res.present == expected:
                 mark, expected_txt = "✅", "present" if expected else "absent"
             else:
                 mark, expected_txt = "❌", "present" if expected else "absent"
                 failures.append(
-                    f"{value}/{name}: fikk {actual_txt} (count={res.count}), ventet {expected_txt}"
+                    f"{value}/{name}: got {actual_txt} (count={res.count}), expected {expected_txt}"
                 )
 
             print(
@@ -168,31 +168,31 @@ def main() -> int:
                 f"{mark:<6}{res.elapsed_s:>7.2f}"
             )
             if args.show_sql:
-                print(f"        relasjon: {res.relation}")
+                print(f"        relation: {res.relation}")
                 print(f"        sql     : {res.sql}")
 
     wall = time.perf_counter() - wall_start
     print()
     if timings:
-        # Dette tallet avgjør om subprocess holder til steg 3, jf. byggeplanen.
+        # This number determines whether subprocess holds to step 3, cf. byggeplan.
         print(
-            f"{len(timings)} kall | snitt {sum(timings)/len(timings):.2f}s | "
-            f"min {min(timings):.2f}s | maks {max(timings):.2f}s | totalt {wall:.1f}s"
+            f"{len(timings)} calls | average {sum(timings)/len(timings):.2f}s | "
+            f"min {min(timings):.2f}s | max {max(timings):.2f}s | total {wall:.1f}s"
         )
         est = (sum(timings) / len(timings)) * 150
-        print(f"Ekstrapolert til 150 noder uten pruning/cache: ~{est/60:.1f} min.")
+        print(f"Extrapolated to 150 nodes without pruning/cache: ~{est/60:.1f} min.")
 
     for msg in errors:
-        print(f"FEIL   {msg}")
+        print(f"ERROR   {msg}")
     for msg in failures:
-        print(f"AVVIK  {msg}")
+        print(f"MISMATCH  {msg}")
 
     if errors:
         return 2
     if failures:
-        print(f"\n{len(failures)} avvik mot fasit.")
+        print(f"\n{len(failures)} mismatch against reference.")
         return 1
-    print("\nAlt stemmer med fasit.")
+    print("\nEverything matches reference.")
     return 0
 
 

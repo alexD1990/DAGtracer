@@ -1,6 +1,6 @@
--- Scenario 555: begge foreldre har verdien, INNER JOIN forklarer ikke bortfallet,
--- og EXCEPT er ikke et mønster diagnostikklaget (steg 6) gjenkjenner.
--- Dette skal derfor gi "unexplained", ikke et falskt selvsikkert svar.
+-- Scenario 555: both parents have the value, INNER JOIN doesn't explain the dropout,
+-- and EXCEPT is not a pattern the diagnostic layer (step 6) recognizes.
+-- This should therefore give "unexplained", not a falsely confident answer.
 with combined as (
     select
         c.orgnr,

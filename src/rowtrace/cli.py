@@ -1,41 +1,41 @@
-"""Steg 8 — CLI (architectur.md §13), rendyrket i steg 8.6, forenklet i 8.7.
+"""Step 8 — CLI (architectur.md §13), refined in step 8.6, simplified in 8.7.
 
-Bundet sammen: metadata (steg 2) -> traversering (steg 3) -> fold (steg 4)
--> output (steg 7). Diagnoselaget (steg 5/6/6.5: join-/filteranalyse) er
-koblet fra hovedstien i steg 8.6 — verktøyet gjør ingen vurdering av funn
-lenger, kun ren presence-rapportering. Kildekoden i joins.py/filters.py/
-sqlparsing.py er bevart, ikke slettet, men ingenting herfra kaller den
-lenger.
+Tied together: metadata (step 2) -> traversal (step 3) -> fold (step 4)
+-> output (step 7). The diagnostic layer (step 5/6/6.5: join/filter analysis)
+is disconnected from the main path in step 8.6 — the tool no longer evaluates
+findings, only pure presence reporting. The source code in joins.py/filters.py/
+sqlparsing.py is preserved, not deleted, but nothing from here calls it
+anymore.
 
-Fjernet i steg 8.6, ikke bare skjult:
-  --fail-on          - verktøyet vurderer ikke lenger funn. Exit-kode
-                       reduseres til 0 (kjørte ferdig) / 2 (verktøyfeil).
-  --dialect          - mistet funksjon når SQL-parsing ble koblet fra.
-  --quiet / -q        - stats-linjen den kuttet er borte fra default, og
-                       warnings vises nå alltid uansett.
-  --include-checked  - overflødig: ny default viser alt sjekket per nivå.
+Removed in step 8.6, not just hidden:
+  --fail-on          - the tool no longer evaluates findings. Exit code
+                       reduced to 0 (completed successfully) / 2 (tool error).
+  --dialect          - lost function when SQL parsing was disconnected.
+  --quiet / -q       - the stats line it cut is gone from default, and
+                       warnings are now always shown regardless.
+  --include-checked  - redundant: new default shows everything checked per level.
 
-Fortsatt bevisst UTENFOR omfang (uendret fra steg 8):
-Steg 8.7 — CLI-forenkling til plain v1:
-  `trace`-subkommandoen er fjernet. Kommandoformen er nå
-  `dgt key,value,from [flagg]` — ett positional-argument, komma-splittet
-  til nøyaktig 3 deler. Feil antall deler -> RowtraceError -> exit 2,
-  samme feilvei som resten av verktøyet (fanges i main()).
+Still deliberately OUT OF scope (unchanged from step 8):
+Step 8.7 — CLI simplification to plain v1:
+  The `trace` subcommand is removed. Command form is now
+  `dgt key,value,from [flags]` — one positional argument, comma-split
+  into exactly 3 parts. Wrong number of parts -> RowtraceError -> exit 2,
+  same error path as rest of tool (caught in main()).
 
-  Fjernet fra --help (kode/default urørt, help=argparse.SUPPRESS):
+  Removed from --help (code/default untouched, help=argparse.SUPPRESS):
   --target, --manifest, --catalog, --max-depth, --no-cache, --no-seeds,
-  --no-sources, --no-snapshots. --project-dir/--profiles-dir er fortsatt
-  synlige, men default=None i argparse (ikke "."), fordi presedensen mot
-  .dgt.yml (config.py) må kunne skille "ikke oppgitt av bruker" fra
-  "eksplisitt cwd". Selve default-oppløsningen ("." for project_dir) skjer
-  i _resolve_paths() her i cli.py, ikke i project.py — DbtProject.create()
-  er uendret og vet fortsatt ingenting om .dgt.yml (Beslutning E holdes
-  intakt: prosjektsti er alltid en parameter inn til project.py).
+  --no-sources, --no-snapshots. --project-dir/--profiles-dir are still
+  visible, but default=None in argparse (not "."), because precedence against
+  .dgt.yml (config.py) must be able to distinguish "not provided by user" from
+  "explicit cwd". The actual default resolution ("." for project_dir) happens
+  in _resolve_paths() here in cli.py, not in project.py — DbtProject.create()
+  is unchanged and still knows nothing about .dgt.yml (Decision E remains
+  intact: project path is always a parameter into project.py).
 
-  .dgt.yml (valgfri, cwd, se config.py) gir defaults for --project-dir/
-  --profiles-dir. Presedens: CLI-flagg > .dgt.yml > hardkodet "." (kun
-  project_dir — profiles_dir har ingen egen fallback her, forblir None
-  til dbt sin egen standardoppdagelse i DbtProject.create()).
+  .dgt.yml (optional, cwd, see config.py) provides defaults for --project-dir/
+  --profiles-dir. Precedence: CLI flags > .dgt.yml > hardcoded "." (only
+  project_dir — profiles_dir has no fallback here, remains None
+  for dbt's own standard discovery in DbtProject.create()).
 """
 
 from __future__ import annotations
@@ -66,12 +66,12 @@ from .traverse import (
 __all__ = ["build_parser", "main"]
 
 _PRUNE_LABELS = {
-    PRUNE_PRESENT: "stoppet her",
-    PRUNE_TERMINAL: "kilde",
-    PRUNE_MISSING_KEY_COLUMN: "kolonne mangler, hoppet over",
-    PRUNE_QUERY_ERROR: "spørring feilet",
-    PRUNE_EXCLUDED: "utenfor policy",
-    PRUNE_MAX_DEPTH: "maks dybde nådd",
+    PRUNE_PRESENT: "stopped here",
+    PRUNE_TERMINAL: "source",
+    PRUNE_MISSING_KEY_COLUMN: "column missing, skipped",
+    PRUNE_QUERY_ERROR: "query failed",
+    PRUNE_EXCLUDED: "outside policy",
+    PRUNE_MAX_DEPTH: "max depth reached",
 }
 
 
@@ -83,20 +83,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "spec",
         metavar="key,value,from",
-        help="Nøkkelkolonne, verdi og startmodell, komma-separert. "
-             "Eksempel: orgnr,222,mart_summary",
+        help="Key column, value, and start model, comma-separated. "
+             "Example: orgnr,222,mart_summary",
     )
-    parser.add_argument("--project-dir", default=None, help="dbt-prosjektets rotmappe")
-    parser.add_argument("--profiles-dir", default=None, help="Mappe med profiles.yml")
+    parser.add_argument("--project-dir", default=None, help="dbt project root directory")
+    parser.add_argument("--profiles-dir", default=None, help="Directory containing profiles.yml")
     parser.add_argument("--output", "-o", choices=("text", "json", "ndjson"), default="text")
     parser.add_argument(
         "--full-trace", action="store_true",
-        help="Ikke stopp på present — fortsett å spore hver gren til dens "
-             "terminalkilde selv når verdien finnes underveis. Flere "
-             "spørringer enn standard (ingen pruning på present-grener).",
+        help="Don't stop on present — continue tracing each branch to its "
+             "terminal source even when the value is found along the way. More "
+             "queries than standard (no pruning on present branches).",
     )
 
-    # Fjernet fra --help i steg 8.7, kode/default urørt (se docstring øverst).
+    # Removed from --help in step 8.7, code/default untouched (see docstring above).
     parser.add_argument("--target", "-t", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--manifest", default=None, help=argparse.SUPPRESS)
     parser.add_argument("--catalog", default=None, help=argparse.SUPPRESS)
@@ -117,24 +117,24 @@ def _presence_symbol(status: str) -> str:
     return "⚠️"
 
 def _parse_spec(spec: str) -> tuple[str, str, str]:
-    """key,value,from -> (key, value, from_node). Krever eksakt 3 deler."""
+    """key,value,from -> (key, value, from_node). Requires exactly 3 parts."""
     parts = spec.split(",")
     if len(parts) != 3:
         raise RowtraceError(
-            f"Forventet nøyaktig 3 komma-separerte deler (key,value,from), "
-            f"fikk {len(parts)} i {spec!r}."
+            f"Expected exactly 3 comma-separated parts (key,value,from), "
+            f"got {len(parts)} in {spec!r}."
         )
     key, value, from_node = parts
     if not key or not value or not from_node:
-        raise RowtraceError(f"Tom del i key,value,from: {spec!r}")
+        raise RowtraceError(f"Empty part in key,value,from: {spec!r}")
     return key, value, from_node
 
 def _resolve_paths(args: argparse.Namespace) -> tuple[str, str | None]:
-    """Presedens (steg 8.7): CLI-flagg -> .dgt.yml -> hardkodet default.
+    """Precedence (step 8.7): CLI flags -> .dgt.yml -> hardcoded default.
 
-    project_dir får alltid en verdi ("." som siste fallback). profiles_dir
-    kan forbli None — DbtProject.create() lar da dbt selv falle tilbake
-    til sin egen standardoppdagelse (~/.dbt/ eller DBT_PROFILES_DIR).
+    project_dir always gets a value ("." as last fallback). profiles_dir
+    can remain None — DbtProject.create() then lets dbt itself fall back
+    to its own standard discovery (~/.dbt/ or DBT_PROFILES_DIR).
     """
     config = load_dgt_config()
 
@@ -150,15 +150,15 @@ def _resolve_paths(args: argparse.Namespace) -> tuple[str, str | None]:
 
 
 # --------------------------------------------------------------------------
-# Spinner — animert "Working..." mens hovedtråden venter på dbt show.
+# Spinner — animated "Working..." while main thread waits on dbt show.
 # --------------------------------------------------------------------------
 
 
 class _Spinner:
-    """Egen tråd som animerer 'Working' med prikker som beveger seg, mens
-    hovedtråden er blokkert i et dbt show-kall. Kun én skriver til stdout
-    av gangen — stop() blokkerer til tråden faktisk har stanset, før
-    _ProgressivePrinter skriver resultatlinjer over samme sted.
+    """Separate thread that animates 'Working' with moving dots, while
+    the main thread is blocked in a dbt show call. Only one writer to stdout
+    at a time — stop() blocks until the thread has actually stopped, before
+    _ProgressivePrinter writes result lines over the same spot.
     """
 
     _FRAMES = ["   ", ".  ", ".. ", "..."]
@@ -192,13 +192,13 @@ class _Spinner:
 
 
 # --------------------------------------------------------------------------
-# Tekstrendring — nivåbasert, progressiv (steg 8.6 + menneskelig test).
+# Text rendering — level-based, progressive (step 8.6 + human testing).
 #
-# Bygger utelukkende på on_event-hendelser ('node_checked'/'branch_pruned')
-# fra traverse.py, ikke på et ferdig TraceResult. En node nådd via flere
-# foreldre (diamant) samles i samme nivå-buffer og vises kun én gang, med
-# en "nådd fra"-liste — result.checked er allerede deduplisert per
-# node-UID, og her følges samme prinsipp direkte på hendelsesstrømmen.
+# Built exclusively on on_event events ('node_checked'/'branch_pruned')
+# from traverse.py, not on a finished TraceResult. A node reached via multiple
+# parents (diamond) is collected in the same level buffer and shown only once,
+# with a "reached from" list — result.checked is already deduplicated per
+# node UID, and the same principle is followed directly on the event stream here.
 # --------------------------------------------------------------------------
 
 
@@ -256,9 +256,9 @@ class _ProgressivePrinter:
         self._buffer[node_uid] = (name, presence, prune_reason, elapsed_s, from_cache)
 
         if depth == 0:
-            # Startnoden er alltid alene på nivå 0 — flush umiddelbart
-            # i stedet for å vente på et nivåskifte som aldri kommer før
-            # dette punktet.
+            # Start node is always alone at level 0 — flush immediately
+            # instead of waiting for a level change that never comes before
+            # this point.
             self._stop_spinner()
             self._flush()
             self._start_spinner()
@@ -293,7 +293,7 @@ class _ProgressivePrinter:
                 time_txt = ""
 
             reached = self._reached.get(node_uid)
-            reached_txt = f"  (nådd fra: {', '.join(reached)})" if reached else ""
+            reached_txt = f"  (reached from: {', '.join(reached)})" if reached else ""
 
             print(f"{label} {name:<28} {symbol} {presence:<10}{tag}{time_txt}{reached_txt}")
         print("-" * 60)
@@ -305,7 +305,7 @@ class _ProgressivePrinter:
 
 
 # --------------------------------------------------------------------------
-# ndjson - hendelsesstrøm (uendret struktur, architectur.md §12.5)
+# ndjson - event stream (unchanged structure, architectur.md §12.5)
 # --------------------------------------------------------------------------
 
 
@@ -371,21 +371,21 @@ def _run_trace(args: argparse.Namespace) -> int:
         print()
         print(f"status  : {result.outcome}")
         print()
-        print("Statistikk:")
-        print(f"  noder besøkt        : {result.stats.nodes_visited}")
-        print(f"  spørringer kjørt    : {result.stats.queries_executed}")
-        print(f"  cache-treff         : {result.stats.cache_hits}")
-        print(f"  grener prunet       : {result.stats.branches_pruned}")
-        print(f"  tid i spørringer    : {result.stats.total_query_seconds:.2f}s")
-        print(f"  total kjøretid      : {wall_seconds:.2f}s")
+        print("Statistics:")
+        print(f"  nodes visited       : {result.stats.nodes_visited}")
+        print(f"  queries executed    : {result.stats.queries_executed}")
+        print(f"  cache hits          : {result.stats.cache_hits}")
+        print(f"  branches pruned     : {result.stats.branches_pruned}")
+        print(f"  time in queries     : {result.stats.total_query_seconds:.2f}s")
+        print(f"  total runtime       : {wall_seconds:.2f}s")
         if result.warnings:
             print()
-            print("Advarsler:")
+            print("Warnings:")
             for w in result.warnings:
                     print(f"  {w}")
         return 2 if result.outcome in ("start_not_checkable", "start_error") else 0
 
-    # json / ndjson trenger fortsatt boundary-folding for boundaries/absent_at_source
+    # json / ndjson still need boundary-folding for boundaries/absent_at_source
     report = fold_boundaries(result)
     doc = build_report(
         result, report,
@@ -416,5 +416,5 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return _run_trace(args)
     except RowtraceError as exc:
-        print(f"Verktøyfeil: {exc}", file=sys.stderr)
+        print(f"Tool error: {exc}", file=sys.stderr)
         return 2

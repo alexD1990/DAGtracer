@@ -1,34 +1,34 @@
-"""Steg 6 — filtersjekk og kombinert konklusjon (architectur.md §7 steg 2-3).
+"""step 6 — filtersjekk and kombinert konklusjon (architectur.md §7 step 2-3).
 
-To atskilte funksjoner, med hensikt: find_filters_for_tree() ser KUN på
-nodens egen SQL, uavhengig av steg 5 sitt resultat. diagnose() tar imot én
-JoinAnalysis (steg 5) og én FilterAnalysis (denne fila) og anvender ordrett
-sannhetstabellen fra architectur.md §7 steg 3.
+To atskilte funksjoner, with hensikt: find_filters_for_tree() ser KUN on
+noits own SQL, uavhengig by step 5 sitt resultat. diagnose() tar imot én
+JoinAnalysis (step 5) and one FilterAnalysis (denne fila) and anvender ordrett
+sannhetstabellen from architectur.md §7 step 3.
 
 diagnose_all() parser kompilert SQL ÉN gang per grensenode (sqlparsing.py),
-og bruker samme tre til både join- og filteranalyse — erstatter det
-tidligere mønsteret der joins.py og filters.py parset uavhengig av
-hverandre (funnet og rettet i steg 7-planleggingen).
+and uses same three for both join and filter analysis — replaces the
+previous pattern where joins.py and filters.py parsed independently by
+hverandre (funnet and rettet i step 7-planleggingen).
 
-VIKTIG AVGRENSNING (funnet under design av steg 6, ikke ved feilsøking):
-find_filters_for_tree() ekskluderer eksplisitt WHERE/HAVING/QUALIFY som
-ligger inne i en gren av en mengdeoperasjon (UNION/EXCEPT/INTERSECT).
+IMPORTANT LIMITATION (found during design of step 6, not in debugging):
+find_filters_for_tree() ekskluderer eksplisitt WHERE/HAVING/QUALIFY that
+ligger inne i en gren by a mengdeoperasjon (UNION/EXCEPT/INTERSECT).
 
-Grunn: testproject/models/mart/mart_summary.sql (orgnr 555-scenarioet) har
+Grunn: testproject/models/mart/mart_summary.sql (orgnr 555-scenarioet) has
 en ekte "where orgnr = '555'" inni EXCEPT-ens andre gren. Uten denne
-ekskluderingen ville find_filters_for_tree() funnet den klausulen og
-rapportert filter_suspected — feil av feil grunn, siden arkitekturens
-poeng med dette scenarioet nettopp er at EXCEPT IKKE er et gjenkjent
-mønster. Regelen er generell: mengdeoperasjoner er ikke i den anerkjente
-konstruksjonslisten i §7 steg 2, så klausuler som kun eksisterer for å
-konstruere en av grenene i en mengdeoperasjon skal ikke telle som en
-forklaring på nodens EGEN filtrering.
+ekskluderingen ville find_filters_for_tree() funnet den klausulen and
+rapportert filter_suspected — wrong by wrong grunn, siden arkitekturens
+poeng with this scenarioet nettopp is at EXCEPT IKKE is et gjenkjent
+pattern. The rule is general: set operations are not in the recognized
+construction list in §7 step 2, so clauses that only exist to
+konstruere en by grenene i en mengdeoperasjon should ikke telle that en
+forklaring on noits EGEN filtrering.
 
-Kjente begrensninger, bevisst utelatt fra MVP:
-  - RANK()/DENSE_RANK() gjenkjennes IKKE som dedup, kun ROW_NUMBER().
-  - Dedup-alias-sporing er kun ett aliasnivå, følger ikke flere lag av
+Kjente begrensninger, deliberately utelatt from MVP:
+  - RANK()/DENSE_RANK() gjenkjennes IKKE that dedup, kun ROW_NUMBER().
+  - Dedup-alias tracking is only one alias level, does not follow multiple layers of
     CTE-videreforing.
-  - references_key_column er navnematch, ikke semantisk kolonne-lineage.
+  - references_key_column is navnematch, ikke semantisk column-lineage.
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ class FilterAnalysis:
 
 @dataclass(frozen=True)
 class Diagnosis:
-    """Endelig konklusjon (architectur.md §12.4-enumet) for én grensenode."""
+    """Endelig konklusjon (architectur.md §12.4-enumet) for one grensenode."""
 
     node_uid: str
     name: str
@@ -171,7 +171,7 @@ def _distinct_on_findings(
 def find_filters_for_tree(
     finding: BoundaryFinding, parsed: ParsedNode, key_column: str, dialect: str
 ) -> FilterAnalysis:
-    """Ren funksjon: tar imot et allerede parset tre, delt med joins.py."""
+    """Ren funksjon: tar imot et allerede parset tre, delt with joins.py."""
     if not parsed.ok or parsed.tree is None:
         return FilterAnalysis(
             node_uid=finding.node_uid, name=finding.name, parse_ok=False,
@@ -190,7 +190,7 @@ def find_filters_for_tree(
     for cls, default_kind in clause_types:
         for clause_node in tree.find_all(cls):
             if _inside_set_operation(clause_node):
-                continue  # se moduldoc: EXCEPT/UNION/INTERSECT-grener ekskludert
+                continue  # see module doc: EXCEPT/UNION/INTERSECT-grener ekskludert
             condition = clause_node.this
             if condition is None:
                 continue
@@ -222,8 +222,8 @@ def find_filters(
     key_column: str,
     dialect: str,
 ) -> FilterAnalysis:
-    """Frittstående bekvemmelighetsfunksjon (isolert filtersjekk). Parser
-    selv. For delt parsing med joins.py i samme kjøring, se diagnose_all().
+    """Standalone convenience function (isolated filter check). Parses
+    itself. for delt parsing with joins.py i same run, se diagnose_all().
     """
     node = lookup_node(manifest, finding.node_uid)
     parsed = parsed_sql_for_node(project, node, dialect)
@@ -256,8 +256,8 @@ def diagnose_all(
     *,
     dialect: str = "duckdb",
 ) -> tuple[Diagnosis, ...]:
-    """Steg 7-planleggingens reviderte inngang: parser hver grensenodes SQL
-    ÉN gang, kjører join- og filteranalyse mot samme tre.
+    """step 7-planleggingens reviderte inngang: parser each grensenodes SQL
+    ONCE, runs join and filter analysis against the same tree.
     """
     result: list[Diagnosis] = []
     for finding in boundaries:

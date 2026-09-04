@@ -1,15 +1,15 @@
-"""Delt sqlglot-parsing for steg 5 (joins.py) og steg 6 (filters.py).
+"""Delt sqlglot-parsing for step 5 (joins.py) and step 6 (filters.py).
 
-Trukket ut i steg 7-planleggingen: joins.py og filters.py parset tidligere
-samme kompilerte SQL-streng hver for seg, uavhengig av hverandre, for hver
-grensenode som trengte begge deler (diagnose_all). sqlglot.parse_one() er
-ikke gratis — dette fjerner den doble kostnaden uten å endre resultatet
-(samme streng, samme dialekt, alltid samme parse-tre).
+Trukket ut i step 7-planleggingen: joins.py and filters.py parset tidligere
+same kompilerte SQL-streng each for seg, uavhengig by hverandre, for hver
+grensenode that trengte begge deler (diagnose_all). sqlglot.parse_one() is
+not free — this fjerner den double cost without changing resultatet
+(same streng, same dialekt, alltid same parse-tre).
 
-Hører hjemme her, ikke i metadata.py: metadata.py er manifest-/catalog-
-laget (architectur.md §3 lag 1) og skal ikke vite om sqlglot. Dette laget
-er fortsatt diagnostikk-/rapportlag (lag 4), bare den delen som er felles
-mellom join- og filteranalyse.
+Belongs here, ikke i metadata.py: metadata.py is manifest-/catalog-
+laget (architectur.md §3 lag 1) and should ikke vite om sqlglot. Dette laget
+is still diagnostikk-/rapportlag (lag 4), bare den delen that is felles
+mellom join and filter analysis.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ __all__ = ["ParsedNode", "parsed_sql_for_node"]
 
 @dataclass(frozen=True)
 class ParsedNode:
-    """Resultat av å hente og parse kompilert SQL for én node."""
+    """Resultat by of fetching and parse kompilert SQL for one node."""
 
     sql: str | None
     tree: exp.Expression | None
@@ -44,15 +44,15 @@ def parsed_sql_for_node(
 
     if not compiled_sql:
         notes.append(
-            "Fant ingen kompilert SQL, verken i target/compiled/ eller i "
-            "manifestet. Kjør 'dbt compile' på nytt."
+            "Fant no kompilert SQL, verken i target/compiled/ or i "
+            "the manifest. Run 'dbt compile' again."
         )
         return ParsedNode(sql=None, tree=None, ok=False, notes=tuple(notes))
 
     try:
         tree = sqlglot.parse_one(compiled_sql, read=dialect)
-    except Exception as exc:  # sqlglot kan kaste flere feiltyper
-        notes.append(f"sqlglot klarte ikke parse SQL-en ({dialect}): {exc}")
+    except Exception as exc:  # sqlglot can kaste flere wrongtyper
+        notes.append(f"sqlglot klarte can't parse SQL-en ({dialect}): {exc}")
         return ParsedNode(sql=compiled_sql, tree=None, ok=False, notes=tuple(notes))
 
     return ParsedNode(sql=compiled_sql, tree=tree, ok=True, notes=tuple(notes))

@@ -1,26 +1,26 @@
-"""Steg 3 — traverseringslag (architectur.md §3 lag 2, §5).
+"""Step 3 — traversal layer (architectur.md §3 layer 2, §5).
 
-Algoritmen (bekreftet i steg 3):
-  0. Sjekk startnoden. Er verdien til stede der, holdt ikke premisset —
-     avslutt med eget utfall framfor et tomt funn-sett.
-  1. Finn direkte foreldre.
-  2. Sjekk hvilke av dem som har verdien.
-  3. Forelder med verdien -> stopp grenen (prunes, men registreres).
-  4. Forelder uten verdien -> gjenta fra 1 derfra, med mindre noden
-     allerede er sjekket (cache).
+Algorithm (confirmed in step 3):
+  0. Check start node. If the value is present there, the premise didn't hold —
+     exit with dedicated outcome instead of an empty finding set.
+  1. Find direct parents.
+  2. Check which of them have the value.
+  3. Parent with value -> stop the branch (pruned, but recorded).
+  4. Parent without value -> repeat from 1 there, unless node
+     already checked (cache).
 
-BFS nivå for nivå, ikke DFS. --max-depth blir en løkkegrense framfor en
-rekursjonsteller, progressiv visning får ferdige nivåer å tegne, og nivået
-er den naturlige enheten for parallellisering i steg 9.
+BFS level by level, not DFS. --max-depth becomes a loop bound instead of a
+recursion counter, progressive display gets complete levels to draw, and level
+is the natural unit for parallelization in step 9.
 
-Beslutning D: ingenting her er en outputkontrakt. on_event-callbacken sender
-løse dicts som *ligner* §12.5, men skjemaet låses først i steg 7.
+Decision D: nothing here is an output contract. The on_event callback sends
+loose dicts that *resemble* §12.5, but the schema is locked first in step 7.
 
-Steg 8.6: on_event-hendelsene ('node_checked'/'branch_pruned') utvidet med
-'name', 'reached_from' (node-UID til barnet som utløste sjekken) og
-'terminal', slik at cli.py sin progressive tekstvisning kan rendre riktig
-underveis, uten å måtte vente på hele TraceResult. Rent tillegg — endrer
-ikke traverseringslogikken eller TraceResult sin struktur.
+Step 8.6: on_event events ('node_checked'/'branch_pruned') extended with
+'name', 'reached_from' (node UID of the child that triggered the check) and
+'terminal', so that cli.py's progressive text display can render correctly
+as it goes, without having to wait for the entire TraceResult. Pure addition —
+doesn't change traversal logic or TraceResult structure.
 """
 
 from __future__ import annotations
@@ -32,14 +32,14 @@ from .metadata import TraversalPolicy, parents_of
 from .presence import GuardedResult, check_presence_guarded
 from .project import DbtProject
 
-# --- Utfall for hele kjøringen --------------------------------------------
+# --- Outcomes for the entire run ------------------------------------------
 OUTCOME_COMPLETE = "complete"
 OUTCOME_START_PRESENT = "start_present"
 OUTCOME_START_NOT_CHECKABLE = "start_not_checkable"
 OUTCOME_START_ERROR = "start_error"
 OUTCOME_MAX_DEPTH = "partial_max_depth"
 
-# --- Grunner til at en gren stopper ---------------------------------------
+# --- Reasons why a branch stops --------------------------------------------
 PRUNE_PRESENT = "present"
 PRUNE_TERMINAL = "terminal"
 PRUNE_MISSING_KEY_COLUMN = "missing_key_column"
@@ -50,8 +50,8 @@ PRUNE_MAX_DEPTH = "max_depth"
 
 @dataclass
 class CheckedNode:
-    """Én besøkt node. Prunede noder ligger her også — steg 4 trenger dem
-    for å avgjøre om barnet er en grensenode (regel 2).
+    """One visited node. Pruned nodes are also here — step 4 needs them
+    to determine if the child is a boundary node (rule 2).
     """
 
     node_uid: str
@@ -72,7 +72,7 @@ class CheckedNode:
 
     @property
     def absent_at_source(self) -> bool:
-        """Terminal node (seed/source) uten verdien: raden kom aldri inn."""
+        """Terminal node (seed/source) without the value: row never entered."""
         return self.terminal and self.status == "absent"
 
 
@@ -88,8 +88,8 @@ class TraceStats:
 
 @dataclass
 class TraceResult:
-    """Rått traverseringsresultat. Steg 4 folder dette til grensenoder,
-    steg 7 til JSON. Bevisst ingen schema_version (beslutning D).
+    """Raw traversal result. Step 4 folds this to boundary nodes,
+    step 7 to JSON. Deliberately no schema_version (decision D).
     """
 
     start_node: str
@@ -97,8 +97,8 @@ class TraceResult:
     value: str
     outcome: str
     checked: dict[str, CheckedNode] = field(default_factory=dict)
-    #: barn -> foreldre, i manifestets rekkefølge. Grunnlaget for
-    #: diamantklassifiseringen i steg 4 og for paths i §12.3.
+    #: child -> parents, in manifest order. Foundation for
+    #: diamond classification in step 4 and for paths in §12.3.
     edges: dict[str, list[str]] = field(default_factory=dict)
     stats: TraceStats = field(default_factory=TraceStats)
     warnings: list[str] = field(default_factory=list)
@@ -116,8 +116,8 @@ class TraceResult:
 
 
 class Tracer:
-    """Eier cache og stats per kjøring. Ingenting er modulglobalt, slik at
-    to kjøringer i samme prosess ikke forurenser hverandre.
+    """Owns cache and stats per run. Nothing is module-global, so that
+    two runs in the same process don't pollute each other.
     """
 
     def __init__(
@@ -151,8 +151,8 @@ class Tracer:
             self.on_event(event)
 
     def _presence(self, node_uid: str, key: str, value: str) -> tuple[GuardedResult, bool]:
-        """Returnerer (resultat, from_cache). Cache er per node-UID, siden
-        nøkkel og verdi er faste gjennom kjøringen (§5).
+        """Returns (result, from_cache). Cache is per node UID, since
+        key and value are fixed throughout the run (§5).
         """
         if self.use_cache and node_uid in self._cache:
             return self._cache[node_uid], True
@@ -199,7 +199,7 @@ class Tracer:
             value=value,
         )
 
-        # --- Steg 0: startnoden ------------------------------------------
+        # --- Step 0: start node ------------------------------------------
         start_res, _ = self._presence(start_uid, key_column, value)
         stats.queries_executed += 1
         stats.nodes_visited += 1
@@ -235,11 +235,11 @@ class Tracer:
             start_node.prune_reason = PRUNE_PRESENT
             result.outcome = OUTCOME_START_PRESENT
             result.warnings.append(
-                f"Verdien {value!r} finnes i startnoden {start_res.name}. "
-                "Traverseringen er avbrutt, siden premisset for søket ikke holder. "
-                "Sjekk target/schema, at prosjektet er bygget på nytt, og at "
-                "verdien er skrevet slik den står i tabellen "
-                f"(kolonnetype: {start_res.key_column_type or 'ukjent'})."
+                f"Value {value!r} exists in start node {start_res.name}. "
+                "Traversal aborted, since the search premise doesn't hold. "
+                "Check target/schema, that the project is rebuilt, and that "
+                "the value is written as it appears in the table "
+                f"(column type: {start_res.key_column_type or 'unknown'})."
             )
             self._emit(event="run_finished", status=result.outcome)
             return result
@@ -247,7 +247,7 @@ class Tracer:
         if start_res.status in ("skipped_missing_key_column", "unknown"):
             result.outcome = OUTCOME_START_NOT_CHECKABLE
             result.warnings.append(
-                f"Startnoden {start_res.name} kunne ikke sjekkes "
+                f"Start node {start_res.name} could not be checked "
                 f"({start_res.detail or start_res.status})."
             )
             self._emit(event="run_finished", status=result.outcome)
@@ -256,12 +256,12 @@ class Tracer:
         if start_res.status == "skipped_query_error":
             result.outcome = OUTCOME_START_ERROR
             result.warnings.append(
-                f"Spørringen mot startnoden {start_res.name} feilet: {start_res.detail}"
+                f"Query against start node {start_res.name} failed: {start_res.detail}"
             )
             self._emit(event="run_finished", status=result.outcome)
             return result
 
-        # --- Steg 1-4: BFS oppover ---------------------------------------
+        # --- Step 1-4: BFS upward ----------------------------------------
         frontier = [start_uid]
         depth = 0
         expanded: set[str] = set()
@@ -276,7 +276,7 @@ class Tracer:
                     node.prune_reason = PRUNE_MAX_DEPTH
                     stats.branches_pruned += 1
                 result.warnings.append(
-                    f"--max-depth {self.max_depth} nådd. Traverseringen er ufullstendig."
+                    f"--max-depth {self.max_depth} reached. Traversal is incomplete."
                 )
                 break
 
@@ -300,9 +300,9 @@ class Tracer:
                     if ref.node_uid in result.checked:
                         existing = result.checked[ref.node_uid]
 
-                        # Aldri spurt (policy-ekskludert/manglende kolonne/
-                        # efemer): ingenting å cache eller re-spørre, uansett
-                        # flagg.
+                        # Never queried (policy-excluded/missing column/
+                        # ephemeral): nothing to cache or re-query, regardless
+                        # of flag.
                         if not existing.queried:
                             stats.cache_hits += 1
                             self._emit(
@@ -327,12 +327,12 @@ class Tracer:
                             )
                             continue
 
-                        # --no-cache: gjenbesøk via en annen diamantgren
-                        # skal faktisk koste en ny spørring. Nodens
-                        # registrerte status og plass i frontier ble
-                        # avgjort ved første besøk og endres ikke - dette
-                        # kallet finnes kun for å gjøre queries_executed
-                        # ærlig om hva en ucachet kjøring koster.
+                        # --no-cache: revisit via another diamond branch
+                        # should actually cost a new query. The node's
+                        # recorded status and place in frontier were
+                        # decided on first visit and don't change - this
+                        # call exists only to make queries_executed
+                        # honest about what an uncached run costs.
                         res, _ = self._presence(ref.node_uid, key_column, value)
                         stats.queries_executed += 1
                         if res.elapsed_s:
@@ -346,7 +346,7 @@ class Tracer:
                         )
                         continue
 
-                    # Utenfor policy: registrer og stopp grenen (regel 5).
+                    # Outside policy: record and stop branch (rule 5).
                     if not ref.checkable and not ref.traverse_through:
                         node = CheckedNode(
                             node_uid=ref.node_uid,
@@ -376,8 +376,8 @@ class Tracer:
                         )
                         continue
 
-                    # Efemer: ingen relasjon å spørre mot, men foreldrene
-                    # er fortsatt relevante (regel 4).
+                    # Ephemeral: no relation to query against, but parents
+                    # are still relevant (rule 4).
                     if not ref.checkable and ref.traverse_through:
                         node = CheckedNode(
                             node_uid=ref.node_uid,
@@ -483,7 +483,7 @@ def trace_upstream(
     full_trace: bool = False,
     on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> TraceResult:
-    """Bekvemmelighetsfunksjon. Steg 4 og CLI kaller denne."""
+    """Convenience function. Step 4 and CLI call this."""
     return Tracer(
         project,
         manifest,

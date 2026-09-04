@@ -1,40 +1,40 @@
-"""Steg 5 — sqlglot join-analyse (architectur.md §3 lag 4, §7 steg 1).
+"""step 5 — sqlglot join analysis (architectur.md §3 layer 4, §7 step 1).
 
-Ren fold over BoundaryFinding-er fra steg 4 (boundaries.py) + delt parset
-SQL fra sqlparsing.py.
+Pure fold over BoundaryFindings from step 4 (boundaries.py) + shared parsed
+SQL from sqlparsing.py.
 
-Bug fanget og rettet i steg 7-planleggingen (før noe skjema ble låst):
-driving-side-hull. Opprinnelig kode lette kun etter fraværende foreldre
-blant JOIN-nodenes MÅL (jn.this) — aldri blant FROM/driving-tabellen. En
-fraværende forelder som er driving-siden (ikke joined-siden) ble dermed
-aldri funnet, og konklusjonen ble feilaktig not_explained_by_join selv i
-det klareste mulige tilfellet: mangler driving-tabellen raden, kan intet
-join-oppsett bringe den tilbake. Ingen av de fem fasit-scenarioene i
-testproject fanget dette (alle har den fraværende forelderen på joined-
-siden), så det ble funnet ved gjennomlesing, ikke ved feilende test.
-Kandidat for en sjette fasit-verdi i testproject — se docs/byggeplan.md.
+Bug caught and fixed in step 7 planning (before any schema was locked):
+driving-side hole. Original code only looked for absent parents
+among JOIN nodes' TARGETS (jn.this) — never among FROM/driving table. An
+absent parent that is the driving side (not the joined side) was thus
+never found, and the conclusion was incorrectly not_explained_by_join even in
+the clearest possible case: if the driving table is missing the row, no
+join setup can bring it back. None of the five reference scenarios in
+testproject caught this (all had the absent parent on the joined
+side), so it was found by review, not in a failing test.
+Candidate for a sixth reference value in testproject — see docs/byggeplan.md.
 
-Forklaringsregelen er IKKE symmetrisk mellom rollene (ikke forenkl bort
-denne asymmetrien ved en senere refaktor):
-  - role="driving", fraværende -> forklarer ved BÅDE inner og left, siden
-    begge krever at driving-raden finnes for at noe skal produseres for
-    den nøkkelen i det hele tatt.
-  - role="joined", fraværende -> forklarer KUN ved inner (architectur.md
-    §7 steg 1, ordrett: "LEFT JOIN der drivende side har verdien -> join
-    kan ikke alene forklare bortfallet" — LEFT JOIN beholder driving-raden
-    uansett hva som skjer på joined-siden).
-  right/full/cross/semi/anti er fortsatt ikke semantisk modellert for
-  NOEN rolle — flagges, explains_absence=False konservativt.
+The explanation rule is NOT symmetric between roles (don't simplify away
+this asymmetry in a later refactor):
+  - role="driving", absent -> explains BOTH inner and left, since
+    both require the driving row to exist for anything to be produced for
+    that key at all.
+  - role="joined", absent -> explains ONLY inner (architectur.md
+    §7 step 1, verbatim: "LEFT JOIN where driving side has the value -> join
+    cannot alone explain the dropout" — LEFT JOIN retains the driving row
+    regardless of what happens on the joined side).
+  right/full/cross/semi/anti are still not semantically modeled for
+  ANY role — flagged, explains_absence=False conservatively.
 
-Fortsatt MVP-avgrensning, bevisst: kun foreldre som ER fraværende blir
-analysert. En present forelder får aldri en JoinInfo (dvs. role="driving"
-for en present driving-tabell vises ikke i output ennå) — det ble vurdert
-og avgjort i steg 7-planleggingen å IKKE utvide nå, siden det kun er en
-output-forbedring, ikke en korrekthetsfiks (i motsetning til hullet over).
+Still MVP limitation, deliberately: only parents that are absent are
+analyzed. A present parent never gets a JoinInfo (i.e. role="driving"
+for a present driving table is not shown in output yet) — this was considered
+and decided in step 7 planning NOT to expand now, since it's only an
+output improvement, not a correctness fix (unlike the hole above).
 
-Driving-tabell er fortsatt forenklet til "FROM-tabellen i samme
-SELECT-scope". Dialekt er parameter, ikke konstant — dialekt-røyktest mot
-Postgres er bevisst utsatt til beta.
+Driving table is still simplified to "the FROM table in the same
+SELECT scope". Dialect is parameter, not constant — dialect smoke test against
+Postgres is deliberately deferred to beta.
 """
 
 from __future__ import annotations
@@ -97,11 +97,11 @@ def _table_short_name(table_expr: exp.Expression | None) -> str | None:
 
 
 def _driving_table_name(join_node: exp.Join) -> str | None:
-    """Første tabell i FROM-klausulen til joinets nærmeste SELECT-scope.
+    """First table in the FROM clause of the join's nearest SELECT scope.
 
-    Nøkkelnavnet på FROM-klausulen i select.args varierer mellom
-    sqlglot-versjoner ('from' vs. 'from_', bekreftet empirisk under steg
-    6.5/orgnr 666 — se docs/byggeplan.md). Sjekker begge fremfor å anta én.
+    The key name for the FROM clause in select.args varies between
+    sqlglot versions ('from' vs. 'from_', confirmed empirically during step
+    6.5/orgnr 666 — see docs/byggeplan.md). Checks both rather than assuming one.
     """
     select = join_node.find_ancestor(exp.Select)
     if select is None:
@@ -145,8 +145,8 @@ def _condition_text(join_node: exp.Join, dialect: str) -> str | None:
 def analyze_join_for_finding(
     finding: BoundaryFinding, parsed: ParsedNode, dialect: str
 ) -> JoinAnalysis:
-    """Ren funksjon: tar imot et allerede parset tre (delt med filters.py
-    via sqlparsing.parsed_sql_for_node), gjør ingen egen fil-lesing.
+    """Pure function: receives an already parsed tree (shared with filters.py
+    via sqlparsing.parsed_sql_for_node), does no file reading itself.
     """
     absent_parents: tuple[ParentStatus, ...] = finding.absent_parents
 
@@ -155,9 +155,9 @@ def analyze_join_for_finding(
             node_uid=finding.node_uid, name=finding.name, dialect=dialect,
             parse_ok=True, joins=(), conclusion=CONCLUSION_NOT_EXPLAINED_BY_JOIN,
             notes=(
-                "Ingen fraværende forelder å eliminere mot — alle direkte "
-                "foreldre er present. Join kan derfor ikke forklare "
-                "bortfallet her; se steg 6 (filtersjekk).",
+                "No absent parent to eliminate against — all direct "
+                "parents are present. Join therefore cannot explain "
+                "the dropout here; see step 6 (filter check).",
             ),
         )
 
@@ -200,16 +200,16 @@ def analyze_join_for_finding(
             if kind not in _MODELED_JOIN_TYPES:
                 explains = False
                 notes.append(
-                    f"join-type '{kind}' er ikke semantisk modellert ennå "
-                    "(kun inner/left er vurdert per architectur.md §7). "
-                    "explains_absence er derfor konservativt satt til False."
+                    f"join-type '{kind}' is not yet semantically modeled "
+                    "(only inner/left are evaluated per architectur.md §7). "
+                    "explains_absence is therefore conservatively set to False."
                 )
             if same_table_both_roles:
                 explains = False
                 notes.append(
-                    f"'{table_name}' ser ut til å være både driving- og "
-                    "join-tabell i samme SELECT (selv-join?). Rolletildeling "
-                    "usikker — ikke stol på explains_absence for denne."
+                    f"'{table_name}' appears to be both driving and "
+                    "join table in same SELECT (self-join?). Role assignment "
+                    "uncertain — don't trust explains_absence for this one."
                 )
 
             matched[key] = JoinInfo(
@@ -225,10 +225,10 @@ def analyze_join_for_finding(
     for key, parent in parent_by_short_name.items():
         if key not in matched:
             top_notes.append(
-                f"{parent.name}: ikke funnet som JOIN-mål eller driving-tabell "
-                "i kompilert SQL (kan være referert via CTE/subquery, eller "
-                "ikke joinet i det hele tatt). Ingen join-basert forklaring "
-                "gitt for denne forelderen."
+                f"{parent.name}: not found as JOIN target or driving table "
+                "in compiled SQL (may be referenced via CTE/subquery, or "
+                "not joined at all). No join-based explanation "
+                "given for this parent."
             )
 
     conclusion = (
@@ -251,8 +251,8 @@ def analyze_joins(
     project: DbtProject,
     dialect: str = "duckdb",
 ) -> tuple[JoinAnalysis, ...]:
-    """Frittstående bekvemmelighetsfunksjon (brukt av step5_test.py alene).
-    For delt parsing på tvers av join+filter i samme kjøring, se
+    """Standalone convenience function (used by step5_test.py alone).
+    For shared parsing across join+filter in same run, see
     filters.diagnose_all().
     """
     results = []

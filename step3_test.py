@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Steg 3 manuell test: rekursiv traversering med pruning og cache.
+"""step 3 manual test: rekursiv traversering with pruning and cache.
 
-Beslutning E: prosjekt- og profilsti er parametere.
+Decision E: project- and profilsti is parametere.
 
-Kjør (fra repo-rot):
+Run (from repo root):
     python step3_test.py --project-dir testproject --profiles-dir testproject
     python step3_test.py --project-dir testproject --profiles-dir testproject --value 111
     python step3_test.py --project-dir testproject --profiles-dir testproject --no-cache
 
-Hver kjøring koster ~2,75 s per unike node. Full traversering for 222 er
-seks kall, altså rundt 17 s.
+Each run costs ~2,75 s per unique node. Full traversal for 222 is
+seks kall, thus around 17 s.
 """
 
 from __future__ import annotations
@@ -33,13 +33,13 @@ from rowtrace.traverse import (  # noqa: E402
     trace_upstream,
 )
 
-# Fasit for traversering fra mart_summary. Utledet av byggeplanens
-# scenariotabell, ikke av en tidligere kjøring — ellers tester vi bare at
-# koden gjentar seg selv.
+# Fasit for traversering from mart_summary. Utledet by byggeplanens
+# scenario table, ikke by a previous run — ellers we only test at
+# koden gjentar seg itself.
 EXPECTED = {
-    # 222: kunde uten ordre. Begge foreldre er absent, siden 222 mangler i
-    # stg_orders helt. Diamanten deler seg derfor først på nivå 2, og
-    # stg_orders nås via begge grener -> ekte cache-treff.
+    # 222: kunde uten ordre. Begge foreldre is absent, siden 222 mangler in
+    # stg_orders completely. The diamond splits itself therefore first at level 2, and
+    # stg_orders is reached via both branches -> real cache hit.
     "222": {
         "outcome": OUTCOME_COMPLETE,
         "present": {"stg_customers"},
@@ -55,8 +55,8 @@ EXPECTED = {
         "min_cache_hits": 1,
         "absent_at_source": {"raw_orders"},
     },
-    # 111: kontrollverdi, finnes overalt. Startnoden har verdien, så
-    # traverseringen skal avbrytes umiddelbart med eget utfall.
+    # 111: kontrollverdi, exists overalt. Startnoden has the value, so
+    # the traversal should avbrytes umiddelbart with eget utfall.
     "111": {
         "outcome": OUTCOME_START_PRESENT,
         "present": {"mart_summary"},
@@ -66,8 +66,8 @@ EXPECTED = {
         "min_cache_hits": 0,
         "absent_at_source": set(),
     },
-    # 555: forsvinner i mart_summary selv. Begge foreldre har verdien, så
-    # begge grener prunes på nivå 1. Ingenting traverseres videre.
+    # 555: forswins in mart_summary itself. Begge foreldre has the value, so
+    # both branches prunes at level 1. Nothing is traversed further.
     "555": {
         "outcome": OUTCOME_COMPLETE,
         "present": {"prep_customer_orders", "prep_active_orders"},
@@ -94,7 +94,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--no-cache", action="store_true")
     p.add_argument("--no-seeds", action="store_true")
     p.add_argument("--no-sources", action="store_true")
-    p.add_argument("--events", action="store_true", help="Vis hendelsesstrøm underveis")
+    p.add_argument("--events", action="store_true", help="Show event stream along the way")
     return p.parse_args()
 
 
@@ -119,13 +119,13 @@ def main() -> int:
 
     print(f"project_dir : {project.project_dir}")
     print(f"start       : {args.from_node}   {args.key}={args.value}")
-    print(f"cache       : {'av' if args.no_cache else 'på'}")
+    print(f"cache       : {'by' if args.no_cache else 'on'}")
     print(f"max_depth   : {args.max_depth if args.max_depth is not None else 'ubegrenset'}")
 
     manifest = load_manifest(project)
     catalog = load_catalog(project, required=False)
     if catalog is None:
-        print("\nADVARSEL: catalog.json mangler. Kjør 'dbt docs generate'.")
+        print("\nWARNING: catalog.json is missing. Run 'dbt docs generate'.")
 
     start_uid = find_node(manifest, args.from_node)
 
@@ -162,7 +162,7 @@ def main() -> int:
             tag = f"  [{', '.join(marks)}]" if marks else ""
             print(f"    {node.name:<24} {node.status:<28} {secs:>7}{tag}")
 
-    hdr("Kanter (barn -> foreldre)")
+    hdr("Kanter (child -> foreldre)")
     for child, parents in result.edges.items():
         child_name = result.checked[child].name
         names = [
@@ -174,29 +174,29 @@ def main() -> int:
     hdr("Statistikk")
     s = result.stats
     print(f"  utfall            : {result.outcome}")
-    print(f"  noder besøkt      : {s.nodes_visited}")
+    print(f"  nodes besøkt      : {s.nodes_visited}")
     print(f"  spørringer kjørt  : {s.queries_executed}")
     print(f"  cache-treff       : {s.cache_hits}")
     print(f"  grener stoppet    : {s.branches_pruned}")
     print(f"  største dybde     : {s.max_depth_reached}")
-    print(f"  tid i spørringer  : {s.total_query_seconds:.2f}s")
+    print(f"  tid in spørringer  : {s.total_query_seconds:.2f}s")
 
     if result.warnings:
         hdr("Advarsler")
         for w in result.warnings:
             print(f"  {w}")
 
-    # --- Sammenlign mot fasit -------------------------------------------
+    # --- Sammenlign against reference -------------------------------------------
     failures: list[str] = []
     expected = EXPECTED.get(args.value) if args.from_node == "mart_summary" else None
 
     hdr("Fasit-sammenligning")
     if expected is None:
-        print(f"  Ingen fasit registrert for {args.from_node} / {args.value}.")
+        print(f"  no fasit registrert for {args.from_node} / {args.value}.")
     else:
         if result.outcome != expected["outcome"]:
             failures.append(
-                f"utfall: forventet {expected['outcome']}, fikk {result.outcome}"
+                f"utfall: forexpected {expected['outcome']}, got {result.outcome}"
             )
 
         got_present = {n.name for n in result.checked.values() if n.status == "present"}
@@ -205,46 +205,46 @@ def main() -> int:
 
         if got_present != expected["present"]:
             failures.append(
-                f"present: forventet {sorted(expected['present'])}, "
-                f"fikk {sorted(got_present)}"
+                f"present: forexpected {sorted(expected['present'])}, "
+                f"got {sorted(got_present)}"
             )
         if got_absent != expected["absent"]:
             failures.append(
-                f"absent: forventet {sorted(expected['absent'])}, "
-                f"fikk {sorted(got_absent)}"
+                f"absent: forexpected {sorted(expected['absent'])}, "
+                f"got {sorted(got_absent)}"
             )
 
         leaked = visited & expected["unvisited"]
         if leaked:
             failures.append(
-                f"besøkte noder som skulle vært prunet bort: {sorted(leaked)}"
+                f"besøkte nodes that skulle vært prunet bort: {sorted(leaked)}"
             )
 
         got_aas = {n.name for n in result.absent_at_source()}
         if got_aas != expected["absent_at_source"]:
             failures.append(
-                f"absent_at_source: forventet {sorted(expected['absent_at_source'])}, "
-                f"fikk {sorted(got_aas)}"
+                f"absent_at_source: forexpected {sorted(expected['absent_at_source'])}, "
+                f"got {sorted(got_aas)}"
             )
 
-        # Cache-forventningen gjelder kun med cache på. Med --no-cache er
-        # poenget nettopp at spørringstallet skal stige.
+        # Cache-forventningen gjelder kun with cache on. with --no-cache is
+        # poenget nettopp at spørringstallet should stige.
         if not args.no_cache:
             if s.queries_executed != expected["queries"]:
                 failures.append(
-                    f"spørringer: forventet {expected['queries']}, "
-                    f"fikk {s.queries_executed}"
+                    f"spørringer: forexpected {expected['queries']}, "
+                    f"got {s.queries_executed}"
                 )
             if s.cache_hits < expected["min_cache_hits"]:
                 failures.append(
-                    f"cache-treff: forventet minst {expected['min_cache_hits']}, "
-                    f"fikk {s.cache_hits}"
+                    f"cache-treff: forexpected minst {expected['min_cache_hits']}, "
+                    f"got {s.cache_hits}"
                 )
         else:
             print(f"  (--no-cache: spørringstall {s.queries_executed} ikke sjekket)")
 
         if not failures:
-            print("  Alt stemmer med fasit.")
+            print("  Everything matches reference.")
 
     hdr("Oppsummering")
     if failures:
@@ -260,5 +260,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RowtraceError as exc:
-        print(f"\nVerktøyfeil: {exc}", file=sys.stderr)
+        print(f"\nTool error: {exc}", file=sys.stderr)
         sys.exit(2)

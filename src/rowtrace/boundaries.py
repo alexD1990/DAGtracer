@@ -1,43 +1,43 @@
-"""Steg 4 — grensenode-identifisering (architectur.md §3 lag 4 forspill, §5, §7 åpning, §15).
+"""Step 4 — boundary node identification (architectur.md §3 layer 4 preamble, §5, §7 opening, §15).
 
-Ren fold over TraceResult fra steg 3 (checked + edges). Ingen nye dbt-kall,
-ingen ny traversering — alt som trengs ble allerede samlet inn i steg 3.
+Pure fold over TraceResult from step 3 (checked + edges). No new dbt calls,
+no new traversal — everything needed was already collected in step 3.
 
-To separate funn-typer, ikke én liste med kategori-tag (avklart i forrige
-samtale, jf. docs/byggeplan.md, steg 4-seksjonen og "Åpne spørsmål"):
+Two separate finding types, not one list with category tags (clarified in previous
+conversation, cf. docs/byggeplan.md, step 4 section and "Open questions"):
 
   BoundaryFinding
-      En node der verdien mangler, men minst én direkte forelder har den
-      (architectur.md §7, åpningssetningen). Har en liste av foreldre med
-      status — det er nøyaktig informasjonen steg 5 (join-analyse) og
-      steg 6 (filtersjekk) trenger for å klassifisere bortfallet videre.
-      Presence-mønsteret alene avgjør IKKE join_confirmed/filter_suspected
-      — det er steg 5/6 sin jobb å parse compiled_code. Steg 4 leverer kun
-      de strukturelle kandidatene.
+      A node where the value is missing, but at least one direct parent has it
+      (architectur.md §7, opening sentence). Has a list of parents with
+      status — that's exactly the information step 5 (join analysis) and
+      step 6 (filter check) need to classify the dropout further.
+      The presence pattern alone does NOT determine join_confirmed/filter_suspected
+      — that's step 5/6's job to parse compiled_code. Step 4 delivers only
+      the structural candidates.
 
   AbsentAtSourceFinding
-      Traverseringen fulgte verdien helt til en terminal node (seed/source)
-      og den mangler fortsatt der. Ingen foreldre å analysere — derfor ingen
-      parents-liste, men i stedet reached_via: stien fra startnoden ned til
-      kildenoden, siden det er den informasjonen som er nyttig når det ikke
-      finnes noe join eller filter å undersøke.
+      The traversal followed the value all the way to a terminal node (seed/source)
+      and it's still missing there. No parents to analyze — therefore no
+      parents list, but instead reached_via: the path from start node down to
+      source node, since that's the information that's useful when there's no
+      join or filter to examine.
 
-Diamantregelen fra architectur.md §5 følger direkte av definisjonen over,
-uten egen kode for hvert av de tre tilfellene:
-  - Alle foreldre present, barn absent  -> BoundaryFinding.
-  - Noen foreldre present, andre absent, barn absent -> BoundaryFinding
-    (minst én present kvalifiserer; steg 5 avgjør senere hvilken av de
-    fraværende foreldrene som strukturelt forklarer bortfallet).
-  - Ingen foreldre present, barn absent -> intet funn her. Steg 3 fortsatte
-    allerede traverseringen oppover fra hver fraværende forelder; enten
-    dukker et BoundaryFinding opp lenger oppe, eller kjeden ender i et
+The diamond rule from architectur.md §5 follows directly from the definition above,
+without separate code for each of the three cases:
+  - All parents present, child absent  -> BoundaryFinding.
+  - Some parents present, others absent, child absent -> BoundaryFinding
+    (at least one present qualifies; step 5 decides later which of the
+    absent parents structurally explains the dropout).
+  - No parents present, child absent -> no finding here. Step 3 already continued
+    traversal upward from each absent parent; either
+    a BoundaryFinding shows up further up, or the chain ends in an
     AbsentAtSourceFinding.
 
-Et barn kan altså dukke opp i én kategori mens traverseringen samtidig
-fortsetter forbi dets fraværende foreldre og finner et funn til lenger oppe
-i samme kjøring (bekreftet manuelt: orgnr 222 gir prep_customer_orders som
-BoundaryFinding OG raw_orders som AbsentAtSourceFinding, via stg_orders som
-delt, fraværende forelder).
+A child can thus appear in one category while traversal simultaneously
+continues past its absent parents and finds another finding further up
+in the same run (confirmed manually: orgnr 222 gives prep_customer_orders as
+BoundaryFinding AND raw_orders as AbsentAtSourceFinding, via stg_orders as
+shared, absent parent).
 """
 
 from __future__ import annotations
@@ -59,12 +59,12 @@ __all__ = [
 
 @dataclass(frozen=True)
 class ParentStatus:
-    """Én direkte forelder til et grensenode-funn, slik steg 5/6 trenger den."""
+    """One direct parent of a boundary node finding, as step 5/6 needs it."""
 
     node_uid: str
     name: str
     resource_type: str
-    status: str  # samme presence-enum som CheckedNode.status
+    status: str  # same presence-enum that CheckedNode.status
 
     @property
     def present(self) -> bool:
@@ -73,7 +73,7 @@ class ParentStatus:
 
 @dataclass(frozen=True)
 class BoundaryFinding:
-    """Et barn der verdien mangler, men minst én direkte forelder har den."""
+    """A child where the value is missing, but at least one direct parent has it."""
 
     node_uid: str
     name: str
@@ -87,40 +87,40 @@ class BoundaryFinding:
 
     @property
     def absent_parents(self) -> tuple[ParentStatus, ...]:
-        """Foreldrene steg 5/6 faktisk skal undersøke videre (join/filter)."""
+        """The parents step 5/6 should actually examine further (join/filter)."""
         return tuple(p for p in self.parents if not p.present)
 
 
 @dataclass(frozen=True)
 class AbsentAtSourceFinding:
-    """Verdien nådde en terminal node (seed/source) og mangler fortsatt der."""
+    """Value reached a terminal node (seed/source) and still missing there."""
 
     node_uid: str
     name: str
     resource_type: str
     depth: int
-    reached_via: tuple[str, ...]  # node-UID-er, startnode -> terminal node inkl.
+    reached_via: tuple[str, ...]  # node-UID-is, startnode -> terminal node incl.
 
 @dataclass(frozen=True)
 class PresentAtSourceFinding:
-    """Verdien nådde en terminal node (seed/source) og finnes der.
+    """Value reached a terminal node (seed/source) and exists there.
 
-    Symmetrisk med AbsentAtSourceFinding. I normal (prunet) modus dukker
-    denne kun opp når en terminal node tilfeldigvis er en direkte forelder
-    til et absent barn (den blir jo alltid sjekket der). Med --full-trace
-    (traverse.py) blir den langt vanligere, siden pruning på present ikke
-    lenger stopper traverseringen før en terminal node nås.
+    Symmetric with AbsentAtSourceFinding. In normal (pruned) mode this
+    only appears when a terminal node happens to be a direct parent
+    of an absent child (it always gets checked there). With --full-trace
+    (traverse.py) it becomes far more common, since pruning on present no
+    longer stops the traversal before a terminal node is reached.
     """
 
     node_uid: str
     name: str
     resource_type: str
     depth: int
-    reached_via: tuple[str, ...]  # node-UID-er, startnode -> terminal node inkl.
+    reached_via: tuple[str, ...]  # node-UID-is, startnode -> terminal node incl.
 
 @dataclass(frozen=True)
 class BoundaryReport:
-    """De to funn-typene fra én TraceResult, holdt atskilt (se moduldoc)."""
+    """The two finding types from one TraceResult, kept separate (see module doc)."""
 
     boundaries: tuple[BoundaryFinding, ...]
     absent_at_source: tuple[AbsentAtSourceFinding, ...]
@@ -130,16 +130,16 @@ class BoundaryReport:
 def _shortest_path_uids(
     edges: dict[str, list[str]], start: str, target: str
 ) -> list[str] | None:
-    """BFS fra start langs edges (barn -> foreldre) fram til target.
+    """BFS from start along edges (child -> parents) to target.
 
-    edges har allerede retningen steg 3 fulgte (nedstrøms node -> dens
-    direkte foreldre), så dette er ren graf-BFS over data vi allerede har
-    — ingen ny lesning av manifest/catalog og ingen nye spørringer.
+    edges already has the direction step 3 followed (downstream node -> dens
+    direct parents), so this is pure graph-BFS over data we already has
+    — no new reading of manifest/catalog and no new queries.
 
-    Ved flere like korte stier (diamant) velges den BFS finner først, som
-    følger rekkefølgen i edges (dbt sin depends_on-rekkefølge). Andre gyldige
-    stier med samme lengde kan finnes — reached_via garanterer én gyldig sti,
-    ikke en kanonisk sti blant flere likeverdige.
+    at multiple equally short paths (diamond) the one ... is chosen BFS finds first, that
+    follows order in edges (dbt's depends_on order). Other valid
+    paths with same length can exist — reached_via guarantees one valid path,
+    ikke en kanonisk sti among several equivalent.
     """
     if start == target:
         return [start]
@@ -165,14 +165,14 @@ def _shortest_path_uids(
                 return path
             queue.append(parent)
 
-    return None  # skal ikke inntreffe: target hentes fra result.checked selv
+    return None  # should not occur: target is fetched from result.checked selv
 
 
 def fold_boundaries(result: TraceResult) -> BoundaryReport:
-    """Steg 4 sin kjernefunksjon. O(noder + kanter), ingen I/O.
+    """step 4 sin core function. O(noder + edges), no I/O.
 
-    Forutsetning: result kommer fra Tracer.trace()/trace_upstream() i steg 3
-    (traverse.py) og er ikke mutert i mellomtiden.
+    Prerequisite: result comes from Tracer.trace()/trace_upstream() i step 3
+    (traverse.py) and is not mutated in the meantime.
     """
     boundaries: list[BoundaryFinding] = []
 
@@ -192,7 +192,7 @@ def fold_boundaries(result: TraceResult) -> BoundaryReport:
             if p_uid in result.checked
         )
         if not any(p.present for p in parents):
-            continue  # §5: ingen foreldre present -> ikke et funn her
+            continue  # §5: no parents present -> not a finding her
 
         boundaries.append(
             BoundaryFinding(
@@ -246,7 +246,7 @@ def fold_boundaries(result: TraceResult) -> BoundaryReport:
 
 
 def names_for_path(result: TraceResult, path: tuple[str, ...]) -> tuple[str, ...]:
-    """Visningshjelp: oversett en reached_via-sti (UID-er) til kortnavn."""
+    """Visningshjelp: oversett en reached_via-sti (UID-is) to kortnavn."""
     return tuple(
         result.checked[uid].name if uid in result.checked else uid.split(".")[-1]
         for uid in path

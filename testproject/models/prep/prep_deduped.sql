@@ -1,6 +1,6 @@
--- Scenario 444: order_id 1002 er (bevisst) delt mellom 444 og 555.
--- Dedup partisjonert på order_id gjør at kun én orgnr overlever per order_id.
--- "order by orgnr desc" gjør at 555 vinner og 444 tapes stille.
+-- Scenario 444: order_id 1002 is (deliberately) shared between 444 and 555.
+-- Dedup partitioned on order_id ensures only one orgnr survives per order_id.
+-- "order by orgnr desc" makes 555 win and 444 lose silently.
 select order_id, orgnr, status
 from (
     select
