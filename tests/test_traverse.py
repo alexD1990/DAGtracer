@@ -548,3 +548,37 @@ def test_downstream_full_trace_continues_past_changes():
         ("down", "column_appears", "c", 2, []),
         ("down", "present_at_leaf", "c", 2, []),
     ]
+
+
+def test_column_nowhere_downstream_is_absent_at_leaf(project):
+    report = dtrace(project, "stg_orders", "nope")
+    assert dfound(report) == [("down", "column_absent_at_leaf", "dim_customers", 3, [])]
+    assert report.warnings == [
+        "column 'nope' is absent in stg_orders; downstream findings show where it appears "
+        "or stays absent, not how far it spreads"
+    ]
+
+
+def test_value_absent_at_leaf():
+    project = make_project([("a", "b")], {"a": ["x"], "b": ["x"]})
+    counts = {"a": {"k": 1}, "b": {"k": 1}}
+    report = dtrace(project, "a", "x", values=["k", "m"], counts=counts)
+    assert dfound(report) == [
+        ("down", "value_absent_at_leaf", "b", 1, ["m"]),
+        ("down", "value_present_at_leaf", "b", 1, ["k"]),
+    ]
+    assert report.warnings == [
+        "value(s) m absent in a; downstream findings show where it appears "
+        "or stays absent, not how far it spreads"
+    ]
+
+
+def test_column_absent_at_leaf_lists_values():
+    project = make_project([("a", "b")], {"a": [], "b": []})
+    report = dtrace(project, "a", "x", values=["k"], counts={})
+    assert dfound(report) == [("down", "column_absent_at_leaf", "b", 1, ["k"])]
+
+
+def test_no_absent_start_warning_upstream():
+    project = make_project([("a", "b")], {"a": [], "b": []})
+    assert dtrace(project, "b", "x", UP).warnings == []

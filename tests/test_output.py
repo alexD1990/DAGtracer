@@ -40,7 +40,7 @@ def test_text_output_lists_warnings_and_empty_trace():
     )
     text = render(project, "a", "y")
     assert "  (no neighbors)\n" in text
-    assert "Findings (0)\n  none\n" in text
+    assert "Findings (0)\n  No findings: no reached node changes status" in text
     assert "\nWarnings\n  catalog.json" in text
 
 
@@ -111,3 +111,14 @@ def test_text_output_both_directions():
         "  +1  down  column_dropped           c\n"
         "        parents: b (present)\n"
     )
+
+
+def test_text_output_explains_no_findings_downstream():
+    # c gets x from b, so it does not appear at c; nothing else to report.
+    project = make_project([("a", "c"), ("b", "c")], {"a": [], "b": ["x"], "c": ["x"]})
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("a"), "x", [Direction.DOWN]
+    )
+    text = render_text(report)
+    assert "Findings (0)\n  No findings: no reached node changes status relative" in text
+    assert "column 'x' is absent in a" in text

@@ -74,6 +74,8 @@ def trace_column(
             f"manifest.json ({project.manifest_generated_at:%Y-%m-%d %H:%M:%S}); "
             "run `dbt docs generate` to refresh column metadata"
         )
+    if Direction.DOWN in directions:
+        report.warnings += _absent_start_warnings(start, column, start_state)
     tracer = _Tracer(project, graph, prober, start, full_trace)
     report.traces.extend(tracer.trace(direction) for direction in directions)
 
@@ -89,6 +91,17 @@ def trace_column(
                 f"{state.column.detail}"
             )
     return report
+
+
+def _absent_start_warnings(start: Node, column: str, state: NodeState) -> list[str]:
+    """Downstream from an absent column/value shows where it appears, not how far it spreads."""
+    note = "downstream findings show where it appears or stays absent, not how far it spreads"
+    if state.status is Status.ABSENT:
+        return [f"column '{column}' is absent in {start.display_name}; {note}"]
+    absent = [value for value, status in state.values.items() if status is Status.ABSENT]
+    if absent:
+        return [f"value(s) {', '.join(absent)} absent in {start.display_name}; {note}"]
+    return []
 
 
 def _unknown_start_message(project: DbtProject, graph: DagGraph, start: Node, column: str) -> str:
@@ -252,19 +265,33 @@ class _Tracer:
         return findings
 
     def _judge_leaf(self, entry: _Entry) -> list[Finding]:
-        """present_at_leaf for keys live at a model/snapshot with no such children."""
+        """*_at_leaf findings for keys live at a model/snapshot with no such children."""
         node, state = entry.node, entry.state
         is_leaf = node.resource_type in DOWNSTREAM_TYPES and not self.graph.neighbors(
             node.unique_id, Direction.DOWN
         )
-        if not is_leaf or state.status is not Status.PRESENT:
+        if not is_leaf:
             return []
         live = set(self.keys) if self.full_trace else entry.live
         finding = partial(self._finding, entry, Direction.DOWN)
         if not self.value_mode:
-            return [finding(Cause.PRESENT_AT_LEAF)] if COLUMN_KEY in live else []
-        present = [v for v in self.keys if v in live and state.values[v] is Status.PRESENT]
-        return [finding(Cause.VALUE_PRESENT_AT_LEAF, affected=present)] if present else []
+            if COLUMN_KEY not in live:
+                return []
+            present = state.status is Status.PRESENT
+            return [finding(Cause.PRESENT_AT_LEAF if present else Cause.COLUMN_ABSENT_AT_LEAF)]
+        live_values = [value for value in self.keys if value in live]
+        if not live_values:
+            return []
+        if state.status is Status.ABSENT:
+            return [finding(Cause.COLUMN_ABSENT_AT_LEAF, affected=live_values)]
+        present = [v for v in live_values if state.values[v] is Status.PRESENT]
+        absent = [v for v in live_values if v not in present]
+        findings = []
+        if present:
+            findings.append(finding(Cause.VALUE_PRESENT_AT_LEAF, affected=present))
+        if absent:
+            findings.append(finding(Cause.VALUE_ABSENT_AT_LEAF, affected=absent))
+        return findings
 
     def _judge_against_parents(
         self, entry: _Entry, keys: list[Key], direction: Direction

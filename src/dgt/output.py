@@ -8,6 +8,10 @@ from dgt.findings import Cause, Finding, ParentStatus, Report, Status, Trace, Vi
 from dgt.graph import Direction
 
 _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
+_NO_FINDINGS = (
+    "no reached node changes status relative to the start node, and no branch ends "
+    "at a seed, source or leaf with a known status."
+)
 
 
 def render_text(report: Report) -> str:
@@ -30,7 +34,7 @@ def render_text(report: Report) -> str:
     lines += ["", f"Findings ({len(findings)})"]
     lines += [
         line for finding in findings for line in _format_finding(finding, with_direction=both)
-    ] or ["  none"]
+    ] or [f"  No findings: {_NO_FINDINGS}"]
 
     if report.warnings:
         lines += ["", "Warnings"]

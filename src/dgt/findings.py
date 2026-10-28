@@ -31,7 +31,9 @@ class Cause(str, Enum):
     VALUE_PRESENT_AT_SOURCE = "value_present_at_source"
     VALUE_ABSENT_AT_SOURCE = "value_absent_at_source"
     PRESENT_AT_LEAF = "present_at_leaf"
+    COLUMN_ABSENT_AT_LEAF = "column_absent_at_leaf"
     VALUE_PRESENT_AT_LEAF = "value_present_at_leaf"
+    VALUE_ABSENT_AT_LEAF = "value_absent_at_leaf"
 
 
 @dataclass(frozen=True)
@@ -71,10 +73,11 @@ class Finding:
     The *_at_source findings make "nowhere upstream" explicit rather than an
     empty result.
 
-    Downstream only, answering "how far did it get":
-    - present_at_leaf / value_present_at_leaf: a model or snapshot without
-      model or snapshot children where the column (value) is present, reached
-      along a branch where it was present all the way.
+    Downstream only, at leaves (models or snapshots without model or snapshot
+    children) reached along a branch where the status held all the way:
+    - present_at_leaf / value_present_at_leaf: the column (value) got this far.
+    - column_absent_at_leaf / value_absent_at_leaf: it is still absent here,
+      so "nowhere downstream" is explicit rather than an empty result.
 
     `values` maps the affected values to their status in this node (value
     mode only); for column_appears these are all tracked values. `depth` is the
