@@ -11,7 +11,14 @@ from dgt.config import resolve_config
 from dgt.errors import DgtError
 from dgt.graph import DagGraph, Direction
 from dgt.output import render_text
-from dgt.probes import DbtShow, ValueProbe, find_dbt_executable, quote_ident, sql_literal
+from dgt.probes import (
+    DBT_SHOW_TIMEOUT,
+    DbtShow,
+    ValueProbe,
+    find_dbt_executable,
+    quote_ident,
+    sql_literal,
+)
 from dgt.project import DbtProject
 from dgt.traverse import trace_column
 
@@ -50,6 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--profiles-dir", help="dbt profiles directory")
     parser.add_argument("--target", help="dbt target")
     parser.add_argument("--dbt-executable", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--dbt-timeout", type=int, default=DBT_SHOW_TIMEOUT, metavar="SECONDS",
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--version", action="version", version=f"dgt {__version__}")
     return parser
 
@@ -92,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
                 config.project_dir,
                 config.profiles_dir,
                 config.target,
+                timeout=args.dbt_timeout,
             )
             value_probe = ValueProbe(values, run_sql)
         report = trace_column(

@@ -101,7 +101,14 @@ def test_invalid_values_fail_before_dbt(built_project_dir, extra, message, capsy
     assert message in capsys.readouterr().err
 
 
-def test_dbt_executable_flag_is_hidden(capsys):
+def test_dbt_flags_are_hidden(capsys):
     with pytest.raises(SystemExit):
         build_parser().parse_args(["--help"])
-    assert "--dbt-executable" not in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "--dbt-executable" not in out
+    assert "--dbt-timeout" not in out
+
+
+def test_dbt_timeout_default_and_override():
+    assert build_parser().parse_args(["m", "-c", "x"]).dbt_timeout == 120
+    assert build_parser().parse_args(["m", "-c", "x", "--dbt-timeout", "5"]).dbt_timeout == 5

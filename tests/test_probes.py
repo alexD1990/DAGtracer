@@ -193,3 +193,11 @@ def test_node_state_cached():
     prober.state(node)
     prober.state(node)
     assert show.queries == ["a"]
+
+
+def test_dbt_show_timeout_is_tool_error(tmp_path):
+    script = tmp_path / "slow-dbt"
+    script.write_text(f"#!{sys.executable}\nimport time\ntime.sleep(5)\n")
+    script.chmod(0o755)
+    with pytest.raises(DgtError, match="timed out after 1s"):
+        DbtShow(str(script), tmp_path, timeout=1)("select 1")

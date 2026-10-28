@@ -73,18 +73,17 @@ def trace_column(
     tracer = _Tracer(project, graph, prober, start, full_trace)
     report.traces.extend(tracer.trace(direction) for direction in directions)
 
-    missing = sorted(
-        {
-            visit.node.unique_id
-            for trace in report.traces
-            for visit in trace.visits
-            if visit.unknown_reason is UnknownReason.NOT_IN_CATALOG
-        }
-    )
-    report.warnings.extend(
-        f"{uid} is not in catalog.json; column status unknown, traversed through"
-        for uid in missing
-    )
+    for uid, state in sorted(prober.probed().items()):
+        reason = state.column.unknown_reason
+        if reason is UnknownReason.NOT_IN_CATALOG:
+            report.warnings.append(
+                f"{uid} is not in catalog.json; column status unknown, traversed through"
+            )
+        elif reason is UnknownReason.QUERY_ERROR:
+            report.warnings.append(
+                f"{uid}: value query failed; status unknown, traversed through: "
+                f"{state.column.detail}"
+            )
     return report
 
 
@@ -176,6 +175,7 @@ class _Tracer:
                 unknown_reason=entry.state.column.unknown_reason,
                 column_type=entry.state.column.column_type,
                 values=dict(entry.state.values),
+                detail=entry.state.column.detail,
             )
             for uid, entry in entries.items()
             if uid != start_uid

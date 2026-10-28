@@ -4,6 +4,8 @@ import json
 import re
 from pathlib import Path
 
+from dgt.errors import DgtError
+
 from dgt.project import DbtProject
 
 
@@ -51,20 +53,27 @@ class FakeShow:
     """Stands in for `dbt show`: answers value-count queries from a table.
 
     `counts`: node short name -> {value: count}; values not listed count 0. The SQL
-    is parsed back, so query construction is exercised too. `queries` records
-    each relation queried.
+    is parsed back, so query construction is exercised too. Queries against
+    nodes in `fail` raise like a failing dbt show. `queries` records each
+    relation queried.
     """
 
     _RELATION = re.compile(r' from "db"\."main"\."([^"]+)" where ')
     _COUNT = re.compile(r"= '([^']*)' then 1 end\) as (v\d+)")
 
-    def __init__(self, counts):
+    def __init__(self, counts, fail=()):
         self.counts = counts
+        self.fail = set(fail)
         self.queries = []
 
     def __call__(self, sql):
         name = self._RELATION.search(sql).group(1)
         self.queries.append(name)
+        if name in self.fail:
+            raise DgtError(
+                f"dbt show failed (exit 1)\nSQL: {sql}\n--- output ---\n"
+                f"Runtime Error\n  Catalog Error: Table {name} does not exist"
+            )
         counts = self.counts.get(name, {})
         row = {alias: counts.get(value, 0) for value, alias in self._COUNT.findall(sql)}
         return "noise before\n" + json.dumps({"show": [row]}, indent=2) + "\n"

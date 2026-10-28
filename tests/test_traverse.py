@@ -250,8 +250,8 @@ def test_stale_catalog_warning():
 # Value mode
 
 
-def vtrace(project, start, column, values, counts, full_trace=False):
-    show = FakeShow(counts)
+def vtrace(project, start, column, values, counts, full_trace=False, fail=()):
+    show = FakeShow(counts, fail)
     report = trace_column(
         project, DagGraph(project.manifest), project.find_node(start), column, UP, full_trace,
         value_probe=ValueProbe(values, show),
@@ -381,3 +381,28 @@ def test_string_value_matches_integer_column(project, built_project_dir, dbt_exe
     )
     assert report.column_type == "INTEGER"
     assert report.start_values == {"01": Status.PRESENT, "7": Status.ABSENT}
+
+
+def test_first_value_query_failure_is_tool_error():
+    project = make_project([("seed:s", "b")], {"seed:s": ["x"], "b": ["x"]})
+    with pytest.raises(DgtError, match=r"first value query failed \(model.p.b\)"):
+        vtrace(project, "b", "x", ["k"], {}, fail={"b"})
+
+
+def test_later_query_failure_makes_node_unknown_and_transparent():
+    project = make_project(
+        [("seed:s", "a"), ("a", "b")], {"seed:s": ["x"], "a": ["x"], "b": ["x"]}
+    )
+    report, _ = vtrace(project, "b", "x", ["k"], {"s": {"k": 1}}, fail={"a"})
+    a = next(v for v in report.traces[0].visits if v.node.name == "a")
+    assert a.status is Status.UNKNOWN
+    assert a.unknown_reason.value == "query_error"
+    assert a.detail == (
+        "dbt show failed (exit 1) ... Catalog Error: Table a does not exist"
+    )
+    assert vfound(report) == [("value_dropped", "b", 0, ["k"])]
+    assert [n.name for n in report.traces[0].findings[0].candidates] == ["b", "a"]
+    assert report.warnings == [
+        "model.p.a: value query failed; status unknown, traversed through: "
+        "dbt show failed (exit 1) ... Catalog Error: Table a does not exist"
+    ]

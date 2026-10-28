@@ -18,6 +18,7 @@ class Status(str, Enum):
 class UnknownReason(str, Enum):
     EPHEMERAL = "ephemeral"
     NOT_IN_CATALOG = "not_in_catalog"
+    QUERY_ERROR = "query_error"
 
 
 class Cause(str, Enum):
@@ -102,6 +103,7 @@ class Visit:
     unknown_reason: UnknownReason | None = None
     column_type: str | None = None
     values: dict[str, Status] = field(default_factory=dict)
+    detail: str | None = None
 
 
 @dataclass

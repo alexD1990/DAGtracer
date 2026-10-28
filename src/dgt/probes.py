@@ -30,6 +30,7 @@ class ProbeResult:
     unknown_reason: UnknownReason | None = None
     column_name: str | None = None
     column_type: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,13 +106,20 @@ class ValueProbe:
 
 
 class Prober:
-    """Cached NodeState per node; value mode when a ValueProbe is given."""
+    """Cached NodeState per node; value mode when a ValueProbe is given.
+
+    If the first value query of the run fails, the error is raised: it most
+    likely affects every query (profile, connection, dbt itself). A later
+    failure makes that node unknown with reason query_error, so it is
+    traversed through like other unknown nodes.
+    """
 
     def __init__(self, column_probe: ColumnProbe, value_probe: ValueProbe | None = None) -> None:
         self.column_probe = column_probe
         self.value_probe = value_probe
         self.values: list[str] = value_probe.values if value_probe else []
         self._cache: dict[str, NodeState] = {}
+        self._query_succeeded = False
 
     def state(self, node: Node) -> NodeState:
         cached = self._cache.get(node.unique_id)
@@ -119,11 +127,36 @@ class Prober:
             cached = self._cache[node.unique_id] = self._state(node)
         return cached
 
+    def probed(self) -> dict[str, NodeState]:
+        """Every node probed so far, by unique_id."""
+        return dict(self._cache)
+
     def _state(self, node: Node) -> NodeState:
         column = self.column_probe.probe(node)
-        if column.status is Status.PRESENT and self.value_probe is not None:
-            return NodeState(column, self.value_probe.probe(node, column.column_name))
-        return NodeState(column, {value: column.status for value in self.values})
+        if column.status is not Status.PRESENT or self.value_probe is None:
+            return NodeState(column, {value: column.status for value in self.values})
+        try:
+            values = self.value_probe.probe(node, column.column_name)
+        except DgtError as exc:
+            if not self._query_succeeded:
+                raise DgtError(f"first value query failed ({node.unique_id}): {exc}") from exc
+            failed = ProbeResult(
+                Status.UNKNOWN,
+                UnknownReason.QUERY_ERROR,
+                column.column_name,
+                column.column_type,
+                detail=_summarize(str(exc)),
+            )
+            return NodeState(failed, {value: Status.UNKNOWN for value in self.values})
+        self._query_succeeded = True
+        return NodeState(column, values)
+
+
+def _summarize(message: str, limit: int = 300) -> str:
+    """First and last non-empty line of an error, truncated."""
+    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    summary = lines[0] if len(lines) < 2 else f"{lines[0]} ... {lines[-1]}"
+    return summary if len(summary) <= limit else summary[: limit - 3] + "..."
 
 
 # Identifiers and literals: the dialect-sensitive part.
