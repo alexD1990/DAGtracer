@@ -23,6 +23,84 @@ EVENT = Draft202012Validator(
 META = RunMeta("0.1.0", "both", None, "2024-01-01T00:00:00.000Z", "2024-01-01T00:00:01.000Z")
 TIMESTAMPS = ("started_at", "finished_at")
 
+# The published schema allows unknown fields (new fields are a minor bump), so
+# the exact key sets of what dgt writes today are pinned here instead. A new
+# field must be added both here and to the schema.
+NODE_REF = {"unique_id", "name", "resource_type"}
+KEYS = {
+    "document": {"schema_version", "tool_version", "status", "run", "traversals", "findings",
+                 "warnings", "error"},
+    "run_header": {"start", "column", "column_type", "values", "direction", "full_trace",
+                   "target", "started_at"},
+    "start": NODE_REF | {"status", "values"},
+    "stats": {"nodes_visited", "nodes_probed", "value_queries", "query_errors", "findings",
+              "uncertain_findings"},
+    "traversals": {"up", "down"},
+    "traversal": {"nodes"},
+    "visit": NODE_REF | {"level", "status", "values", "column_type", "unknown_reason", "detail",
+                         "stopped", "reached_from"},
+    "finding": {"direction", "level", "cause", "node", "values", "uncertain", "candidates",
+                "parents"},
+    "parent": NODE_REF | {"status", "values", "via"},
+    "error": {"message"},
+    "run_started": {"event", "schema_version", "tool_version", "run"},
+    "node_probed": {"event", "direction", "node"},
+    "finding_event": {"event", "finding"},
+    "warning": {"event", "message"},
+    "run_finished": {"event", "status", "finished_at", "stats", "error"},
+}
+
+
+def assert_keys(obj, kind):
+    assert set(obj) == KEYS[kind], f"{kind}: {sorted(set(obj) ^ KEYS[kind])}"
+
+
+def assert_run_header_keys(run, extra=frozenset()):
+    assert set(run) == KEYS["run_header"] | extra
+    assert_keys(run["start"], "start")
+
+
+def assert_finding_keys(finding):
+    assert_keys(finding, "finding")
+    assert set(finding["node"]) == NODE_REF
+    for parent in finding["parents"]:
+        assert_keys(parent, "parent")
+
+
+def validate_document(document):
+    DOCUMENT.validate(document)
+    assert_keys(document, "document")
+    assert_keys(document["traversals"], "traversals")
+    if document["error"] is not None:
+        assert_keys(document["error"], "error")
+    if document["run"] is not None:
+        assert_run_header_keys(document["run"], {"finished_at", "stats"})
+        assert_keys(document["run"]["stats"], "stats")
+    for traversal in document["traversals"].values():
+        if traversal is not None:
+            assert_keys(traversal, "traversal")
+            for visit in traversal["nodes"]:
+                assert_keys(visit, "visit")
+    for finding in document["findings"]:
+        assert_finding_keys(finding)
+
+
+def validate_event(event):
+    EVENT.validate(event)
+    kind = event["event"]
+    assert_keys(event, "finding_event" if kind == "finding" else kind)
+    if kind == "run_started":
+        assert_run_header_keys(event["run"])
+    elif kind == "node_probed":
+        assert_keys(event["node"], "visit")
+    elif kind == "finding":
+        assert_finding_keys(event["finding"])
+    elif kind == "run_finished":
+        if event["stats"] is not None:
+            assert_keys(event["stats"], "stats")
+        if event["error"] is not None:
+            assert_keys(event["error"], "error")
+
 
 def test_schema_is_valid():
     Draft202012Validator.check_schema(SCHEMA)
@@ -55,7 +133,7 @@ def test_json_output_matches_schema(built_project_dir, capsys, argv):
     code, out = run_cli(capsys, *argv, "-o", "json", "--project-dir", str(built_project_dir))
     assert code == EXIT_OK
     document = json.loads(out)
-    DOCUMENT.validate(document)
+    validate_document(document)
     assert document["status"] in ("complete", "partial")
 
 
@@ -77,7 +155,7 @@ def test_tool_error_writes_error_document(built_project_dir, capsys):
     )
     assert code == EXIT_TOOL_ERROR
     document = json.loads(out)
-    DOCUMENT.validate(document)
+    validate_document(document)
     assert document["status"] == "error"
     assert "no model, seed or snapshot named 'nope'" in document["error"]["message"]
 
@@ -89,7 +167,7 @@ def test_tool_error_with_ndjson_writes_run_finished(built_project_dir, capsys):
     assert code == EXIT_TOOL_ERROR
     (line,) = out.splitlines()
     event = json.loads(line)
-    EVENT.validate(event)
+    validate_event(event)
     assert (event["event"], event["status"]) == ("run_finished", "error")
 
 
@@ -100,7 +178,7 @@ def test_ndjson_events_match_schema_and_order(built_project_dir, capsys):
     assert code == EXIT_OK
     events = [json.loads(line) for line in out.splitlines()]
     for event in events:
-        EVENT.validate(event)
+        validate_event(event)
     kinds = [event["event"] for event in events]
     order = ["run_started", "node_probed", "finding", "warning", "run_finished"]
     assert kinds == sorted(kinds, key=order.index)
@@ -143,18 +221,18 @@ def _value_report(fail=()):
 
 def test_value_mode_document_matches_schema():
     document = build_document(_value_report(), META)
-    DOCUMENT.validate(document)
+    validate_document(document)
     assert document["run"]["values"] == ["k", "m"]
     assert document["run"]["start"]["values"] == {"k": "absent", "m": "present"}
     causes = {(f["cause"], f["node"]["name"]) for f in document["findings"]}
     assert ("value_dropped", "a") in causes
     for line in render_ndjson(_value_report(), META).splitlines():
-        EVENT.validate(json.loads(line))
+        validate_event(json.loads(line))
 
 
 def test_query_error_makes_status_partial():
     document = build_document(_value_report(fail={"t"}), META)
-    DOCUMENT.validate(document)
+    validate_document(document)
     assert document["status"] == "partial"
     assert document["run"]["stats"]["query_errors"] == 1
     (failed,) = [n for n in document["traversals"]["up"]["nodes"] if n["name"] == "t"]
@@ -169,3 +247,20 @@ def test_column_mode_has_empty_values_everywhere(built_project_dir, capsys):
     assert all(node["values"] == {} for node in document["traversals"]["up"]["nodes"])
     assert all(f["values"] == {} for f in document["findings"])
     assert document["traversals"]["down"] is None
+
+
+def test_schema_accepts_unknown_fields():
+    document = build_document(_value_report(), META)
+    document["added_in_1_1"] = {"anything": True}
+    document["run"]["new_run_field"] = 1
+    document["findings"][0]["new_finding_field"] = "x"
+    document["traversals"]["up"]["nodes"][0]["new_visit_field"] = None
+    DOCUMENT.validate(document)
+    EVENT.validate({"event": "warning", "message": "m", "new_event_field": 1})
+
+
+def test_key_check_catches_unintended_fields():
+    document = build_document(_value_report(), META)
+    document["findings"][0]["debug"] = True
+    with pytest.raises(AssertionError, match="finding"):
+        validate_document(document)

@@ -293,8 +293,9 @@ The output is one document. Its contract is
   `unique_id`. Findings follow data-flow order. Two runs differ only in
   `started_at` and `finished_at`.
 - **Versioning:** a minor `schema_version` bump only adds fields, and a major
-  bump removes or changes them. Consumers should ignore fields they do not
-  know.
+  bump removes or changes them. The schema therefore allows unknown fields, and
+  consumers should ignore fields they do not know. The tests pin the exact
+  field sets dgt writes today, so an unintended field is still caught.
 
 ### NDJSON (`-o ndjson`)
 
