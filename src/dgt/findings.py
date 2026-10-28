@@ -68,7 +68,8 @@ class Finding:
     The *_at_source findings make "nowhere upstream" explicit rather than an
     empty result.
 
-    `values` lists the affected values (value mode only). `depth` is the
+    `values` maps the affected values to their status in this node (value
+    mode only); for column_appears these are all tracked values. `depth` is the
     node's signed level in the traversal that found it. A finding that depends
     on an unknown node is `uncertain`; `candidates` then lists the nodes where
     the change may actually happen, this node first.
@@ -81,7 +82,7 @@ class Finding:
     depth: int
     uncertain: bool = False
     candidates: tuple[Node, ...] = ()
-    values: tuple[str, ...] = ()
+    values: dict[str, Status] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

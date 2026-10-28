@@ -308,8 +308,9 @@ def test_column_change_stops_branch_even_if_value_status_matches():
     report, _ = vtrace(project, "b", "x", ["k"], {})
     (visit,) = report.traces[0].visits
     assert visit.stopped
-    # a is not judged; b is, at column level, with no tracked value present.
-    assert vfound(report) == [("column_appears", "b", 0, [])]
+    # a is not judged; b is, at column level, listing the tracked values.
+    assert vfound(report) == [("column_appears", "b", 0, ["k"])]
+    assert report.traces[0].findings[0].values == {"k": Status.ABSENT}
 
 
 def test_branch_continues_while_one_value_unchanged():

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from itertools import groupby
 
-from dgt.findings import Finding, ParentStatus, Report, Status, Trace, Visit
+from dgt.findings import Cause, Finding, ParentStatus, Report, Status, Trace, Visit
 from dgt.graph import Direction
 
 _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
@@ -72,7 +72,11 @@ def _level(depth: int) -> str:
 def _format_finding(finding: Finding) -> list[str]:
     head = f"  {_level(finding.depth):>2}  {finding.cause.value:<23}  {finding.node.display_name}"
     if finding.values:
-        head += f" [{', '.join(finding.values)}]"
+        if finding.cause is Cause.COLUMN_APPEARS:
+            listed = ", ".join(f"{value}={status.value}" for value, status in finding.values.items())
+        else:
+            listed = ", ".join(finding.values)
+        head += f" [{listed}]"
     if finding.uncertain:
         head += f"  (uncertain: {', '.join(node.display_name for node in finding.candidates)})"
     lines = [head]

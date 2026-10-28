@@ -77,5 +77,13 @@ def test_text_output_value_mode():
         "Findings (2)\n"
         "   0  value_dropped            b [m]\n"
         "        parents: a (present; k=present, m=present)\n"
-        "  -1  column_appears           a [k]\n"
+        "  -1  column_appears           a [k=present]\n"
+    )
+
+
+def test_column_appears_lists_values_with_status():
+    project = make_project([("a", "b")], {"a": [], "b": ["x"]})
+    show = FakeShow({"b": {"k": 1}})
+    assert "   0  column_appears           b [k=present, m=absent]\n" in render(
+        project, "b", "x", ["k", "m"], show
     )

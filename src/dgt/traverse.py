@@ -207,7 +207,7 @@ class _Tracer:
             return Finding(
                 cause, node, parents, direction, entry.depth,
                 uncertain=bool(candidates), candidates=candidates,
-                values=tuple(affected or ()),
+                values={value: state.values[value] for value in affected or ()},
             )
 
         present_here = [value for value in values if state.values[value] is Status.PRESENT]
@@ -243,7 +243,7 @@ class _Tracer:
             return [finding(Cause.COLUMN_DROPPED, parents, unknowns, affected)]
 
         if not with_column:
-            return [finding(Cause.COLUMN_APPEARS, parents, _unknowns_in(parents), present_here)]
+            return [finding(Cause.COLUMN_APPEARS, parents, _unknowns_in(parents), values)]
 
         dropped, dropped_unknowns, appears = [], [], []
         for value in values:
