@@ -80,6 +80,7 @@ def test_stop_does_not_expand_changed_nodes(project):
 
 def test_full_trace_judges_every_node(project):
     report = trace(project, "dim_customers", "last_name", full_trace=True)
+    absent_sources = {"raw_orders", "raw.payments"}
     assert set(levels(report)) == {
         "fct_orders", "int_customers_named", "int_customers_slim", "int_order_payments",
         "int_orders_enriched", "int_orders_valid", "stg_customers", "stg_orders",
@@ -89,7 +90,10 @@ def test_full_trace_judges_every_node(project):
     assert found(report) == [
         ("column_dropped", "int_customers_slim", -1),
         ("present_at_source", "raw_customers", -3),
+        ("column_absent_at_source", "raw.payments", -4),
+        ("column_absent_at_source", "raw_orders", -4),
     ]
+    assert absent_sources == {f[1] for f in found(report) if f[0] == "column_absent_at_source"}
 
 
 def test_column_case_insensitive(project):
@@ -98,11 +102,20 @@ def test_column_case_insensitive(project):
     )
 
 
-def test_column_nowhere_traverses_everything_without_findings(project):
-    report = trace(project, "stg_payments", "nope")
+def test_column_nowhere_reports_absent_at_every_reached_source(project):
+    report = trace(project, "dim_customers", "nope")
     assert report.start_status is Status.ABSENT
-    assert found(report) == []
-    assert levels(report) == {"raw.payments": (-1, "absent")}
+    assert found(report) == [
+        ("column_absent_at_source", "raw_customers", -3),
+        ("column_absent_at_source", "raw.payments", -4),
+        ("column_absent_at_source", "raw_orders", -4),
+    ]
+    assert not any(v.stopped for v in report.traces[0].visits)
+
+
+def test_absent_source_on_present_branch_is_not_reported(project):
+    # raw_orders lacks last_name but is never reached along an absent branch.
+    assert "raw_orders" not in {f[1] for f in found(trace(project, "dim_customers", "last_name"))}
 
 
 def test_ephemeral_parent_is_transparent(project):
@@ -260,6 +273,15 @@ def test_value_dropped_while_column_kept():
     assert report.start_values == {"k": Status.PRESENT, "m": Status.ABSENT}
     assert vfound(report) == [
         ("value_dropped", "b", 0, ["m"]),
+        ("value_present_at_source", "s", -1, ["k"]),
+    ]
+
+
+def test_value_absent_at_source_on_absent_branch():
+    project = make_project([("seed:s", "b")], {"seed:s": ["x"], "b": ["x"]})
+    report, _ = vtrace(project, "b", "x", ["k", "m"], {"s": {"k": 1}, "b": {"k": 1}})
+    assert vfound(report) == [
+        ("value_absent_at_source", "s", -1, ["m"]),
         ("value_present_at_source", "s", -1, ["k"]),
     ]
 

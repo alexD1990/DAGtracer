@@ -24,9 +24,11 @@ class Cause(str, Enum):
     COLUMN_DROPPED = "column_dropped"
     COLUMN_APPEARS = "column_appears"
     PRESENT_AT_SOURCE = "present_at_source"
+    COLUMN_ABSENT_AT_SOURCE = "column_absent_at_source"
     VALUE_DROPPED = "value_dropped"
     VALUE_APPEARS = "value_appears"
     VALUE_PRESENT_AT_SOURCE = "value_present_at_source"
+    VALUE_ABSENT_AT_SOURCE = "value_absent_at_source"
 
 
 @dataclass(frozen=True)
@@ -53,11 +55,18 @@ class Finding:
     - column_dropped: the node lacks the column and a known parent has it.
     - column_appears: the node has the column and no known parent has it.
     - present_at_source: a seed or source with the column (column mode).
+    - column_absent_at_source: a seed or source without the column, reached
+      along a branch where the column was absent all the way.
 
     Value level, per value, where the node has the column:
     - value_dropped: absent in the node, present in a known parent.
     - value_appears: present in the node, present in no known parent.
     - value_present_at_source: present in a seed or source.
+    - value_absent_at_source: absent in a seed or source, reached along a
+      branch where the value was absent all the way.
+
+    The *_at_source findings make "nowhere upstream" explicit rather than an
+    empty result.
 
     `values` lists the affected values (value mode only). `depth` is the
     node's signed level in the traversal that found it. A finding that depends

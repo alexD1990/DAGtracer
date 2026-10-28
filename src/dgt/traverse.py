@@ -212,13 +212,17 @@ class _Tracer:
 
         present_here = [value for value in values if state.values[value] is Status.PRESENT]
         if node.resource_type in TERMINAL_UPSTREAM_TYPES:
-            if state.status is not Status.PRESENT:
-                return []
+            if state.status is Status.ABSENT:
+                return [finding(Cause.COLUMN_ABSENT_AT_SOURCE)]
             if not self.value_mode:
                 return [finding(Cause.PRESENT_AT_SOURCE)]
+            absent_here = [value for value in values if value not in present_here]
+            findings = []
             if present_here:
-                return [finding(Cause.VALUE_PRESENT_AT_SOURCE, affected=present_here)]
-            return []
+                findings.append(finding(Cause.VALUE_PRESENT_AT_SOURCE, affected=present_here))
+            if absent_here:
+                findings.append(finding(Cause.VALUE_ABSENT_AT_SOURCE, affected=absent_here))
+            return findings
 
         parents = self._resolved_parents(node.unique_id)
         with_column = [parent for parent in parents if parent.status is Status.PRESENT]
