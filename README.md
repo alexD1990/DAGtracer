@@ -301,7 +301,8 @@ The output is one document. Its contract is
 
 The output is one JSON object per line, emitted in this order: `run_started`,
 `node_probed` (per visited node and direction), `finding`, `warning`,
-`run_finished` (status, `finished_at`, stats). A tool error produces a single
+`run_finished` (status, `finished_at`, stats). The events are currently written
+after the run completes; see [Limitations](#limitations). A tool error produces a single
 `run_finished` with `status: "error"`. The event shapes are under
 `$defs/ndjson_event` in the same schema.
 
@@ -333,6 +334,9 @@ The output is one JSON object per line, emitted in this order: `run_started`,
   lists them, and exits with code 2, asking for a fresh `dbt parse`.
 - **Performance.** Each value query is a separate `dbt show` process, about 2 s
   each, mostly startup time. Queries run sequentially.
+- **NDJSON is not streamed yet.** All events are written once the run has
+  finished, so `-o ndjson` gives no progress during long value runs. Streaming
+  is planned together with the performance work.
 
 ## Development
 
