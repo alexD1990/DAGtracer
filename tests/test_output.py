@@ -25,9 +25,9 @@ def test_text_output_groups_levels():
         "Start status: present\n"
         "\n"
         "Upstream\n"
+        "   -2 s  seed      TEXT  present\n"
         "   -1 a  model     TEXT  present\n"
         "      b  model     -     absent     <- stop\n"
-        "   -2 s  seed      TEXT  present\n"
         "\n"
         "Findings (1)\n"
         "  -2  present_at_source        s\n"
@@ -75,9 +75,9 @@ def test_text_output_value_mode():
         "   -1 a  model     TEXT  present    k=present, m=present\n"
         "\n"
         "Findings (2)\n"
+        "  -1  column_appears           a [k=present]\n"
         "   0  value_dropped            b [m]\n"
         "        parents: a (present; k=present, m=present)\n"
-        "  -1  column_appears           a [k=present]\n"
     )
 
 

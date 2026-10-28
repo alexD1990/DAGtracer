@@ -188,8 +188,9 @@ class _Tracer:
             if judged:
                 keys = [key for key in self.keys if key in judged]
                 trace.findings.extend(self._judge(entry, keys, direction))
+        # Data-flow order: most upstream level first.
         trace.findings.sort(
-            key=lambda f: (abs(f.depth), f.node.display_name, f.cause.value, f.uncertain)
+            key=lambda f: (f.depth, f.node.display_name, f.cause.value, f.uncertain)
         )
         trace.visits = [
             Visit(

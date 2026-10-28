@@ -29,8 +29,6 @@ def render_text(report: Report) -> str:
     lines += _render_both(report) if both else _render_single(report.traces[0])
 
     findings = [finding for trace in report.traces for finding in trace.findings]
-    if both:
-        findings.sort(key=lambda finding: finding.depth)
     lines += ["", f"Findings ({len(findings)})"]
     lines += [
         line for finding in findings for line in _format_finding(finding, with_direction=both)
@@ -43,8 +41,8 @@ def render_text(report: Report) -> str:
 
 
 def _render_single(trace: Trace) -> list[str]:
-    """One direction, nearest level first."""
-    visits = sorted(trace.visits, key=lambda visit: (abs(visit.depth), visit.node.display_name))
+    """One direction in data-flow order, levels -N..-1 or +1..+N."""
+    visits = sorted(trace.visits, key=lambda visit: (visit.depth, visit.node.display_name))
     return ["", _DIRECTION_TITLES[trace.direction]] + (
         _render_levels(visits, visits) or ["  (no neighbors)"]
     )

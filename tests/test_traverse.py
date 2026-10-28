@@ -88,10 +88,10 @@ def test_full_trace_judges_every_node(project):
     }
     assert not any(v.stopped for v in report.traces[0].visits)
     assert found(report) == [
-        ("column_dropped", "int_customers_slim", -1),
-        ("present_at_source", "raw_customers", -3),
         ("column_absent_at_source", "raw.payments", -4),
         ("column_absent_at_source", "raw_orders", -4),
+        ("present_at_source", "raw_customers", -3),
+        ("column_dropped", "int_customers_slim", -1),
     ]
     assert absent_sources == {f[1] for f in found(report) if f[0] == "column_absent_at_source"}
 
@@ -106,9 +106,9 @@ def test_column_nowhere_reports_absent_at_every_reached_source(project):
     report = trace(project, "dim_customers", "nope")
     assert report.start_status is Status.ABSENT
     assert found(report) == [
-        ("column_absent_at_source", "raw_customers", -3),
         ("column_absent_at_source", "raw.payments", -4),
         ("column_absent_at_source", "raw_orders", -4),
+        ("column_absent_at_source", "raw_customers", -3),
     ]
     assert not any(v.stopped for v in report.traces[0].visits)
 
@@ -226,9 +226,9 @@ def test_model_without_parents_is_where_column_appears():
 def test_full_trace_reports_reappearing_column():
     project = make_project([("a", "b"), ("b", "c")], {"a": ["x"], "b": [], "c": ["x"]})
     assert found(trace(project, "c", "x", full_trace=True)) == [
-        ("column_appears", "c", 0),
-        ("column_dropped", "b", -1),
         ("column_appears", "a", -2),
+        ("column_dropped", "b", -1),
+        ("column_appears", "c", 0),
     ]
 
 
@@ -272,8 +272,8 @@ def test_value_dropped_while_column_kept():
     report, _ = vtrace(project, "b", "x", ["k", "m"], {"s": {"k": 1, "m": 1}, "b": {"k": 1}})
     assert report.start_values == {"k": Status.PRESENT, "m": Status.ABSENT}
     assert vfound(report) == [
-        ("value_dropped", "b", 0, ["m"]),
         ("value_present_at_source", "s", -1, ["k"]),
+        ("value_dropped", "b", 0, ["m"]),
     ]
 
 
@@ -290,8 +290,8 @@ def test_value_appears():
     project = make_project([("seed:s", "b")], {"seed:s": ["x"], "b": ["x"]})
     report, _ = vtrace(project, "b", "x", ["k", "m"], {"s": {"k": 1}, "b": {"k": 1, "m": 1}})
     assert vfound(report) == [
-        ("value_appears", "b", 0, ["m"]),
         ("value_present_at_source", "s", -1, ["k"]),
+        ("value_appears", "b", 0, ["m"]),
     ]
 
 
@@ -320,8 +320,8 @@ def test_branch_continues_while_one_value_unchanged():
     stopped = {v.node.name: v.stopped for v in report.traces[0].visits}
     assert stopped == {"a": False, "s": True}
     assert vfound(report) == [
-        ("value_dropped", "b", 0, ["k"]),
         ("value_dropped", "a", -1, ["m"]),
+        ("value_dropped", "b", 0, ["k"]),
     ]
 
 
@@ -353,8 +353,8 @@ def test_full_trace_judges_all_values():
     counts = {"s": {"k": 1, "m": 1}, "b": {"k": 1}}
     report, _ = vtrace(project, "b", "x", ["k", "m"], counts, full_trace=True)
     assert vfound(report) == [
-        ("value_dropped", "b", 0, ["m"]),
         ("value_present_at_source", "s", -1, ["k", "m"]),
+        ("value_dropped", "b", 0, ["m"]),
     ]
 
 
@@ -367,8 +367,8 @@ def test_values_against_real_dbt(project, built_project_dir, dbt_executable):
     )
     assert report.column_type == "VARCHAR"
     assert vfound(report) == [
-        ("value_dropped", "int_orders_valid", -1, ["returned"]),
         ("value_present_at_source", "raw_orders", -3, ["completed"]),
+        ("value_dropped", "int_orders_valid", -1, ["returned"]),
     ]
     assert parents(report, "int_orders_valid") == {"stg_orders": "present"}
 
