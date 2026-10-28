@@ -421,3 +421,130 @@ def test_certain_and_uncertain_drops_at_one_node_are_separate_findings():
         (["k"], False, []),
         (["m"], True, ["b", "e"]),
     ]
+
+
+# Downstream and both
+
+DOWN = [Direction.DOWN]
+BOTH = [Direction.UP, Direction.DOWN]
+
+
+def dtrace(project, start, column, directions=DOWN, full_trace=False, values=(), counts=None):
+    value_probe = ValueProbe(values, FakeShow(counts or {})) if values else None
+    return trace_column(
+        project, DagGraph(project.manifest), project.find_node(start), column, directions,
+        full_trace, value_probe=value_probe,
+    )
+
+
+def dfound(report):
+    return [
+        (f.direction.value, f.cause.value, f.node.display_name, f.depth, list(f.values))
+        for t in report.traces
+        for f in t.findings
+    ]
+
+
+def test_partial_spread_downstream(project):
+    report = dtrace(project, "stg_orders", "status")
+    assert dfound(report) == [
+        ("down", "column_dropped", "int_orders_enriched", 1, []),
+        ("down", "column_dropped", "dim_customers", 3, []),
+    ]
+    assert {v.node.name: (v.depth, v.stopped) for v in report.traces[0].visits} == {
+        "int_orders_enriched": (1, True),
+        "int_orders_valid": (1, False),
+        "fct_orders": (2, False),
+        "dim_customers": (3, True),
+    }
+
+
+def test_downstream_diamond(project):
+    report = dtrace(project, "stg_customers", "last_name")
+    assert dfound(report) == [
+        ("down", "present_at_leaf", "customers_snapshot", 1, []),
+        ("down", "column_dropped", "int_customers_slim", 1, []),
+        ("down", "present_at_leaf", "dim_customers", 2, []),
+    ]
+
+
+def test_downstream_appears_considers_other_parents(project):
+    # order_size appears in int_orders_enriched; fct_orders gets it from there,
+    # not from int_orders_valid on the traversed path, so it is not a finding.
+    report = dtrace(project, "stg_orders", "order_size")
+    assert dfound(report) == [("down", "column_appears", "int_orders_enriched", 1, [])]
+    assert {v.node.name: v.stopped for v in report.traces[0].visits}["fct_orders"]
+
+
+def test_downstream_present_child_with_present_other_parent_is_not_appears(project):
+    assert dfound(dtrace(project, "int_customers_named", "country")) == []
+
+
+def test_both_is_two_traversals_in_one_report(project):
+    report = dtrace(project, "dim_customers", "last_name", BOTH)
+    assert [t.direction for t in report.traces] == BOTH
+    assert dfound(report) == [
+        ("up", "present_at_source", "raw_customers", -3, []),
+        ("down", "present_at_leaf", "dim_customers", 0, []),
+    ]
+
+
+def test_partial_spread_downstream_values_against_real_dbt(
+    project, built_project_dir, dbt_executable
+):
+    show = DbtShow(dbt_executable, built_project_dir, built_project_dir)
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("stg_orders"), "status", DOWN,
+        value_probe=ValueProbe(["completed", "returned"], show),
+    )
+    assert dfound(report) == [
+        ("down", "column_dropped", "int_orders_enriched", 1, ["completed", "returned"]),
+        ("down", "value_dropped", "int_orders_valid", 1, ["returned"]),
+        ("down", "column_dropped", "dim_customers", 3, ["completed"]),
+    ]
+
+
+def test_downstream_start_not_judged_against_its_parents():
+    project = make_project([("a", "b")], {"a": [], "b": ["x"]})
+    assert dfound(dtrace(project, "b", "x")) == [("down", "present_at_leaf", "b", 0, [])]
+    assert dfound(dtrace(project, "b", "x", BOTH)) == [
+        ("up", "column_appears", "b", 0, []),
+        ("down", "present_at_leaf", "b", 0, []),
+    ]
+
+
+def test_downstream_drop_through_ephemeral_is_uncertain():
+    project = make_project(
+        [("s", "e"), ("e", "c")], {"s": ["x"], "e": None, "c": []}, ephemeral={"e"}
+    )
+    report = dtrace(project, "s", "x")
+    assert dfound(report) == [("down", "column_dropped", "c", 2, [])]
+    assert [n.name for n in report.traces[0].findings[0].candidates] == ["c", "e"]
+
+
+def test_leaf_only_for_live_keys():
+    # Column absent from the start: a leaf where it is present is where it
+    # appears, not how far it got.
+    project = make_project([("a", "b")], {"a": [], "b": ["x"]})
+    assert dfound(dtrace(project, "a", "x")) == [("down", "column_appears", "b", 1, [])]
+
+
+def test_downstream_values_leaf_and_drop():
+    project = make_project([("a", "b"), ("a", "c")], {"a": ["x"], "b": ["x"], "c": ["x"]})
+    counts = {"a": {"k": 1, "m": 1}, "b": {"k": 1, "m": 1}, "c": {"k": 1}}
+    report = dtrace(project, "a", "x", values=["k", "m"], counts=counts)
+    assert dfound(report) == [
+        ("down", "value_present_at_leaf", "b", 1, ["k", "m"]),
+        ("down", "value_dropped", "c", 1, ["m"]),
+        ("down", "value_present_at_leaf", "c", 1, ["k"]),
+    ]
+
+
+def test_downstream_full_trace_continues_past_changes():
+    project = make_project([("a", "b"), ("b", "c")], {"a": ["x"], "b": [], "c": ["x"]})
+    report = dtrace(project, "a", "x", full_trace=True)
+    assert dfound(report) == [
+        ("down", "column_dropped", "b", 1, []),
+        ("down", "column_appears", "c", 2, []),
+        ("down", "present_at_leaf", "c", 2, []),
+    ]

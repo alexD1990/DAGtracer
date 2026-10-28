@@ -25,6 +25,12 @@ from dgt.traverse import trace_column
 EXIT_OK = 0
 EXIT_TOOL_ERROR = 2
 
+DIRECTIONS = {
+    "up": [Direction.UP],
+    "down": [Direction.DOWN],
+    "both": [Direction.UP, Direction.DOWN],
+}
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -108,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             value_probe = ValueProbe(values, run_sql)
         report = trace_column(
             project, DagGraph(project.manifest), start, args.column,
-            [Direction(args.direction)], full_trace=args.full_trace, value_probe=value_probe,
+            DIRECTIONS[args.direction], full_trace=args.full_trace, value_probe=value_probe,
         )
     except DgtError as exc:
         print(f"dgt: error: {exc}", file=sys.stderr)
@@ -118,7 +124,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _check_supported(args: argparse.Namespace) -> None:
-    if args.direction != "up":
-        raise DgtError(f"direction '{args.direction}' is not implemented yet")
     if args.output != "text":
         raise DgtError(f"output format '{args.output}' is not implemented yet")

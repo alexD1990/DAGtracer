@@ -21,13 +21,16 @@ def render_text(report: Report) -> str:
         + _status_with_values(report.start_status, report.start_values)
         + ("  [full trace]" if report.full_trace else "")
     )
-    for trace in report.traces:
-        lines += ["", _DIRECTION_TITLES[trace.direction]]
-        lines += _render_levels(trace) or ["  (no neighbors)"]
+    both = len(report.traces) > 1
+    lines += _render_both(report) if both else _render_single(report.traces[0])
 
     findings = [finding for trace in report.traces for finding in trace.findings]
+    if both:
+        findings.sort(key=lambda finding: finding.depth)
     lines += ["", f"Findings ({len(findings)})"]
-    lines += [line for finding in findings for line in _format_finding(finding)] or ["  none"]
+    lines += [
+        line for finding in findings for line in _format_finding(finding, with_direction=both)
+    ] or ["  none"]
 
     if report.warnings:
         lines += ["", "Warnings"]
@@ -35,12 +38,47 @@ def render_text(report: Report) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_levels(trace: Trace) -> list[str]:
+def _render_single(trace: Trace) -> list[str]:
+    """One direction, nearest level first."""
     visits = sorted(trace.visits, key=lambda visit: (abs(visit.depth), visit.node.display_name))
+    return ["", _DIRECTION_TITLES[trace.direction]] + (
+        _render_levels(visits, visits) or ["  (no neighbors)"]
+    )
+
+
+def _render_both(report: Report) -> list[str]:
+    """Both directions as one ladder of levels -N..0..+N, the start node at 0."""
+    start = Visit(
+        node=report.start,
+        depth=0,
+        status=report.start_status,
+        via=None,
+        column_type=report.column_type,
+        values=report.start_values,
+    )
+    by_direction = {trace.direction: trace.visits for trace in report.traces}
+    upstream = sorted(
+        by_direction[Direction.UP], key=lambda v: (v.depth, v.node.display_name)
+    )
+    downstream = sorted(
+        by_direction[Direction.DOWN], key=lambda v: (v.depth, v.node.display_name)
+    )
+    every = [*upstream, start, *downstream]
+    return (
+        ["", _DIRECTION_TITLES[Direction.UP]]
+        + _render_levels(upstream, every)
+        + _render_levels([start], every)
+        + ["", _DIRECTION_TITLES[Direction.DOWN]]
+        + (_render_levels(downstream, every) or ["  (no neighbors)"])
+    )
+
+
+def _render_levels(visits: list[Visit], aligned_with: list[Visit]) -> list[str]:
+    """Visits grouped by level, in the given order; columns sized over `aligned_with`."""
     if not visits:
         return []
-    name_width = max(len(visit.node.display_name) for visit in visits)
-    type_width = max(len(visit.column_type or "-") for visit in visits)
+    name_width = max(len(visit.node.display_name) for visit in aligned_with)
+    type_width = max(len(visit.column_type or "-") for visit in aligned_with)
     lines = []
     for depth, group in groupby(visits, key=lambda visit: visit.depth):
         label = _level(depth)
@@ -69,8 +107,12 @@ def _level(depth: int) -> str:
     return f"{depth:+d}" if depth else "0"
 
 
-def _format_finding(finding: Finding) -> list[str]:
-    head = f"  {_level(finding.depth):>2}  {finding.cause.value:<23}  {finding.node.display_name}"
+def _format_finding(finding: Finding, with_direction: bool = False) -> list[str]:
+    direction = f"{finding.direction.value:<4}  " if with_direction else ""
+    head = (
+        f"  {_level(finding.depth):>2}  {direction}{finding.cause.value:<23}  "
+        f"{finding.node.display_name}"
+    )
     if finding.values:
         if finding.cause is Cause.COLUMN_APPEARS:
             listed = ", ".join(f"{value}={status.value}" for value, status in finding.values.items())

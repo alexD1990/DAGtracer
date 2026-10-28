@@ -87,3 +87,27 @@ def test_column_appears_lists_values_with_status():
     assert "   0  column_appears           b [k=present, m=absent]\n" in render(
         project, "b", "x", ["k", "m"], show
     )
+
+
+def test_text_output_both_directions():
+    project = make_project([("a", "b"), ("b", "c")], {"a": ["x"], "b": ["x"], "c": []})
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("b"), "x",
+        [Direction.UP, Direction.DOWN],
+    )
+    assert render_text(report) == (
+        "Column 'x' (TEXT) from b (model.p.b)\n"
+        "Start status: present\n"
+        "\n"
+        "Upstream\n"
+        "   -1 a  model     TEXT  present\n"
+        "    0 b  model     TEXT  present\n"
+        "\n"
+        "Downstream\n"
+        "   +1 c  model     -     absent     <- stop\n"
+        "\n"
+        "Findings (2)\n"
+        "  -1  up    column_appears           a\n"
+        "  +1  down  column_dropped           c\n"
+        "        parents: b (present)\n"
+    )

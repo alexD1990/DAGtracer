@@ -43,7 +43,7 @@ def test_unknown_start_status_is_tool_error(built_project_dir, capsys):
 
 
 @pytest.mark.parametrize(
-    "extra", [["-d", "down"], ["-d", "both"], ["-o", "json"]]
+    "extra", [["-o", "json"], ["-o", "ndjson"]]
 )
 def test_unimplemented_options_are_tool_errors(built_project_dir, extra, capsys):
     argv = ["dim_customers", "-c", "x", "--project-dir", str(built_project_dir), *extra]
@@ -112,3 +112,15 @@ def test_dbt_flags_are_hidden(capsys):
 def test_dbt_timeout_default_and_override():
     assert build_parser().parse_args(["m", "-c", "x"]).dbt_timeout == 120
     assert build_parser().parse_args(["m", "-c", "x", "--dbt-timeout", "5"]).dbt_timeout == 5
+
+
+@pytest.mark.parametrize(
+    "direction, sections", [("down", ["Downstream"]), ("both", ["Upstream", "Downstream"])]
+)
+def test_directions(built_project_dir, direction, sections, capsys):
+    argv = ["stg_customers", "-c", "last_name", "-d", direction,
+            "--project-dir", str(built_project_dir)]
+    assert main(argv) == EXIT_OK
+    out = capsys.readouterr().out
+    assert [s for s in ("Upstream", "Downstream") if f"\n{s}\n" in out] == sections
+    assert "present_at_leaf" in out

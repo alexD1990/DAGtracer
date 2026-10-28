@@ -5,21 +5,25 @@ value in value mode. A key stays live on a branch while its status matches
 the start node's; in value mode that requires the same column status as well
 as the same value status, so column-level changes take precedence. A branch
 continues while at least one key is live and stops at the first node where
-none is. Unknown nodes (ephemeral, not in catalog) keep the live keys they
-were reached with and are traversed through. With `full_trace`, branches
-never stop. Each node is probed once and re-enqueued only when reached again
-with keys it did not already carry.
+none is. Unknown nodes (ephemeral, not in catalog, failed query) keep the
+live keys they were reached with and are traversed through. With
+`full_trace`, branches never stop. Each node is probed once and re-enqueued
+only when reached again with keys it did not already carry live.
 
 Where the traversal stops and what counts as a finding are separate: findings
-are judged per node against the node's parents (see `Finding`), only for
-nodes the traversal continued through, and only for keys live at that node.
-A node where a branch stops is shown but is not itself a finding.
+are judged per node against all of the node's parents (see `Finding`).
+Upstream, only nodes the traversal continued through are judged, for the keys
+live there; a parent where a branch stops is shown but not judged. Downstream,
+the child where a key changes is the finding, so each node is judged for the
+keys that arrived at it, including where the branch stops. The start node is
+judged against its parents only upstream, so `both` does not report it twice.
 """
 
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
+from functools import partial
 
 from dgt.errors import DgtError
 from dgt.findings import (
@@ -32,7 +36,7 @@ from dgt.findings import (
     UnknownReason,
     Visit,
 )
-from dgt.graph import TERMINAL_UPSTREAM_TYPES, DagGraph, Direction
+from dgt.graph import DOWNSTREAM_TYPES, TERMINAL_UPSTREAM_TYPES, DagGraph, Direction
 from dgt.probes import ColumnProbe, NodeState, Prober, ValueProbe
 from dgt.project import DbtProject, Node
 
@@ -113,6 +117,7 @@ class _Entry:
     depth: int
     state: NodeState
     via: str | None
+    arrived: set[Key]
     live: set[Key]
 
 
@@ -132,7 +137,8 @@ class _Tracer:
     def trace(self, direction: Direction) -> Trace:
         step = -1 if direction is Direction.UP else 1
         start_uid = self.start.unique_id
-        entries = {start_uid: _Entry(self.start, 0, self.start_state, None, set(self.keys))}
+        all_keys = set(self.keys)
+        entries = {start_uid: _Entry(self.start, 0, self.start_state, None, all_keys, all_keys)}
         queue = deque([start_uid])
 
         while queue:
@@ -142,28 +148,33 @@ class _Tracer:
             for uid in self.graph.neighbors(current.node.unique_id, direction):
                 node = self.project.node(uid)
                 state = self.prober.state(node)
-                live = {key for key in current.live if self._unchanged(state, key)}
+                arrived = set(current.live)
+                live = {key for key in arrived if self._unchanged(state, key)}
                 entry = entries.get(uid)
                 if entry is None:
                     entries[uid] = _Entry(
-                        node, current.depth + step, state, current.node.unique_id, live
+                        node, current.depth + step, state, current.node.unique_id, arrived, live
                     )
                     queue.append(uid)
-                elif not live <= entry.live:
-                    entry.live |= live
-                    queue.append(uid)
+                else:
+                    entry.arrived |= arrived
+                    if not live <= entry.live:
+                        entry.live |= live
+                        queue.append(uid)
 
         trace = Trace(direction=direction)
         for entry in entries.values():
             if entry.state.status is Status.UNKNOWN:
                 continue
             if self.full_trace:
-                judged = self.keys
-            elif entry.live:
-                judged = [key for key in self.keys if key in entry.live]
+                judged = all_keys
+            elif direction is Direction.UP:
+                judged = entry.live
             else:
-                continue
-            trace.findings.extend(self._judge(entry, judged, direction))
+                judged = entry.arrived
+            if judged:
+                keys = [key for key in self.keys if key in judged]
+                trace.findings.extend(self._judge(entry, keys, direction))
         trace.findings.sort(
             key=lambda f: (abs(f.depth), f.node.display_name, f.cause.value, f.uncertain)
         )
@@ -195,37 +206,73 @@ class _Tracer:
         return state.values[key] is self.start_state.values[key]
 
     def _judge(self, entry: _Entry, keys: list[Key], direction: Direction) -> list[Finding]:
-        """Classify a node with known status against its (resolved) parents."""
+        """Classify a node with known status for the given keys."""
+        if entry.node.resource_type in TERMINAL_UPSTREAM_TYPES:
+            # Seeds and sources are only reached upstream (or are the start).
+            return self._judge_source(entry, keys) if direction is Direction.UP else []
+        findings = []
+        if direction is Direction.UP or entry.node is not self.start:
+            findings += self._judge_against_parents(entry, keys, direction)
+        if direction is Direction.DOWN:
+            findings += self._judge_leaf(entry)
+        return findings
+
+    def _finding(
+        self,
+        entry: _Entry,
+        direction: Direction,
+        cause: Cause,
+        parents: tuple[ParentStatus, ...] = (),
+        unknowns: list[Node] | None = None,
+        affected: list[str] | None = None,
+    ) -> Finding:
         node, state = entry.node, entry.state
+        candidates = tuple(dict.fromkeys([node, *unknowns])) if unknowns else ()
+        return Finding(
+            cause, node, parents, direction, entry.depth,
+            uncertain=bool(candidates), candidates=candidates,
+            values={value: state.values[value] for value in affected or ()},
+        )
+
+    def _judge_source(self, entry: _Entry, keys: list[Key]) -> list[Finding]:
+        state = entry.state
+        finding = partial(self._finding, entry, Direction.UP)
         values = [key for key in keys if key is not COLUMN_KEY]
-
-        def finding(
-            cause: Cause,
-            parents: tuple[ParentStatus, ...] = (),
-            unknowns: list[Node] | None = None,
-            affected: list[str] | None = None,
-        ) -> Finding:
-            candidates = tuple(dict.fromkeys([node, *unknowns])) if unknowns else ()
-            return Finding(
-                cause, node, parents, direction, entry.depth,
-                uncertain=bool(candidates), candidates=candidates,
-                values={value: state.values[value] for value in affected or ()},
-            )
-
         present_here = [value for value in values if state.values[value] is Status.PRESENT]
-        if node.resource_type in TERMINAL_UPSTREAM_TYPES:
-            if state.status is Status.ABSENT:
-                return [finding(Cause.COLUMN_ABSENT_AT_SOURCE)]
-            if not self.value_mode:
-                return [finding(Cause.PRESENT_AT_SOURCE)]
-            absent_here = [value for value in values if value not in present_here]
-            findings = []
-            if present_here:
-                findings.append(finding(Cause.VALUE_PRESENT_AT_SOURCE, affected=present_here))
-            if absent_here:
-                findings.append(finding(Cause.VALUE_ABSENT_AT_SOURCE, affected=absent_here))
-            return findings
+        if state.status is Status.ABSENT:
+            return [finding(Cause.COLUMN_ABSENT_AT_SOURCE)]
+        if not self.value_mode:
+            return [finding(Cause.PRESENT_AT_SOURCE)]
+        absent_here = [value for value in values if value not in present_here]
+        findings = []
+        if present_here:
+            findings.append(finding(Cause.VALUE_PRESENT_AT_SOURCE, affected=present_here))
+        if absent_here:
+            findings.append(finding(Cause.VALUE_ABSENT_AT_SOURCE, affected=absent_here))
+        return findings
 
+    def _judge_leaf(self, entry: _Entry) -> list[Finding]:
+        """present_at_leaf for keys live at a model/snapshot with no such children."""
+        node, state = entry.node, entry.state
+        is_leaf = node.resource_type in DOWNSTREAM_TYPES and not self.graph.neighbors(
+            node.unique_id, Direction.DOWN
+        )
+        if not is_leaf or state.status is not Status.PRESENT:
+            return []
+        live = set(self.keys) if self.full_trace else entry.live
+        finding = partial(self._finding, entry, Direction.DOWN)
+        if not self.value_mode:
+            return [finding(Cause.PRESENT_AT_LEAF)] if COLUMN_KEY in live else []
+        present = [v for v in self.keys if v in live and state.values[v] is Status.PRESENT]
+        return [finding(Cause.VALUE_PRESENT_AT_LEAF, affected=present)] if present else []
+
+    def _judge_against_parents(
+        self, entry: _Entry, keys: list[Key], direction: Direction
+    ) -> list[Finding]:
+        """Dropped/appears findings for a node against all of its (resolved) parents."""
+        node, state = entry.node, entry.state
+        finding = partial(self._finding, entry, direction)
+        values = [key for key in keys if key is not COLUMN_KEY]
         parents = self._resolved_parents(node.unique_id)
         with_column = [parent for parent in parents if parent.status is Status.PRESENT]
 
