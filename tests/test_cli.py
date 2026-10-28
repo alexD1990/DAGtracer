@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 
 from dgt.cli import EXIT_OK, EXIT_TOOL_ERROR, build_parser, main, read_values
@@ -32,7 +34,7 @@ def test_traces_upstream(built_project_dir, capsys):
     assert code == EXIT_OK
     out = capsys.readouterr().out
     assert "Findings (1)" in out
-    assert "present_at_source  raw_customers" in out
+    assert "present_at_source        raw_customers" in out
 
 
 def test_unknown_start_status_is_tool_error(built_project_dir, capsys):
@@ -41,7 +43,7 @@ def test_unknown_start_status_is_tool_error(built_project_dir, capsys):
 
 
 @pytest.mark.parametrize(
-    "extra", [["-d", "down"], ["-d", "both"], ["-v", "a"], ["-o", "json"]]
+    "extra", [["-d", "down"], ["-d", "both"], ["-o", "json"]]
 )
 def test_unimplemented_options_are_tool_errors(built_project_dir, extra, capsys):
     argv = ["dim_customers", "-c", "x", "--project-dir", str(built_project_dir), *extra]
@@ -67,3 +69,39 @@ def test_config_warnings_go_to_stderr(built_project_dir, tmp_path, monkeypatch, 
     assert "dgt: warning:" in captured.err
     assert "did you mean 'profiles_dir'?" in captured.err
     assert "warning" not in captured.out
+
+
+def _fake_dbt(tmp_path, stdout):
+    script = tmp_path / "fake-dbt"
+    script.write_text(f"#!{sys.executable}\nimport sys\nsys.stdout.write({stdout!r})\n")
+    script.chmod(0o755)
+    return str(script)
+
+
+def test_value_mode_uses_dbt_executable_override(built_project_dir, tmp_path, capsys):
+    dbt = _fake_dbt(tmp_path, '{"show": [{"v0": 1, "v1": 0}]}')
+    argv = [
+        "stg_orders", "-c", "status", "-v", "completed", "-v", "returned", "-v", "completed",
+        "--project-dir", str(built_project_dir), "--dbt-executable", dbt,
+    ]
+    assert main(argv) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "Values: completed, returned\n" in out
+    assert "Start status: present; completed=present, returned=absent" in out
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [(["-v", "it's"], "whitelist"), (["-c", "bad-name", "-v", "a"], "invalid column name")],
+)
+def test_invalid_values_fail_before_dbt(built_project_dir, extra, message, capsys):
+    argv = ["stg_orders", "-c", "status", "--project-dir", str(built_project_dir),
+            "--dbt-executable", "/nonexistent/dbt", *extra]
+    assert main(argv) == EXIT_TOOL_ERROR
+    assert message in capsys.readouterr().err
+
+
+def test_dbt_executable_flag_is_hidden(capsys):
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--help"])
+    assert "--dbt-executable" not in capsys.readouterr().out

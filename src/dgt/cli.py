@@ -11,6 +11,7 @@ from dgt.config import resolve_config
 from dgt.errors import DgtError
 from dgt.graph import DagGraph, Direction
 from dgt.output import render_text
+from dgt.probes import DbtShow, ValueProbe, find_dbt_executable, quote_ident, sql_literal
 from dgt.project import DbtProject
 from dgt.traverse import trace_column
 
@@ -48,33 +49,54 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-dir", help="dbt project directory (default: .)")
     parser.add_argument("--profiles-dir", help="dbt profiles directory")
     parser.add_argument("--target", help="dbt target")
+    parser.add_argument("--dbt-executable", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="version", version=f"dgt {__version__}")
     return parser
 
 
 def read_values(args: argparse.Namespace) -> list[str]:
-    """Values from `-v` or `--values-file`; blank lines in the file are skipped."""
+    """Values from `-v` or `--values-file`, deduplicated in order.
+
+    Blank lines in the file are skipped.
+    """
     if args.values_file is not None:
         try:
             lines = args.values_file.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
             raise DgtError(f"cannot read values file: {exc}") from exc
-        return [line.strip() for line in lines if line.strip()]
-    return list(args.values or [])
+        values = [line.strip() for line in lines if line.strip()]
+    else:
+        values = list(args.values or [])
+    return list(dict.fromkeys(values))
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         _check_supported(args)
+        values = read_values(args)
+        if values:
+            # Validate up front so bad input fails before any dbt call.
+            quote_ident(args.column)
+            for value in values:
+                sql_literal(value)
         config = resolve_config(args.project_dir, args.profiles_dir, args.target)
         for warning in config.warnings:
             print(f"dgt: warning: {warning}", file=sys.stderr)
         project = DbtProject.load(config.project_dir)
         start = project.find_node(args.start_model)
+        value_probe = None
+        if values:
+            run_sql = DbtShow(
+                find_dbt_executable(args.dbt_executable),
+                config.project_dir,
+                config.profiles_dir,
+                config.target,
+            )
+            value_probe = ValueProbe(values, run_sql)
         report = trace_column(
             project, DagGraph(project.manifest), start, args.column,
-            [Direction(args.direction)], full_trace=args.full_trace,
+            [Direction(args.direction)], full_trace=args.full_trace, value_probe=value_probe,
         )
     except DgtError as exc:
         print(f"dgt: error: {exc}", file=sys.stderr)
@@ -84,8 +106,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _check_supported(args: argparse.Namespace) -> None:
-    if read_values(args):
-        raise DgtError("value tracing (-v/--values-file) is not implemented yet")
     if args.direction != "up":
         raise DgtError(f"direction '{args.direction}' is not implemented yet")
     if args.output != "text":

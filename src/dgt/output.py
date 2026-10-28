@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from itertools import groupby
 
-from dgt.findings import Finding, ParentStatus, Report, Trace, Visit
+from dgt.findings import Finding, ParentStatus, Report, Status, Trace, Visit
 from dgt.graph import Direction
 
 _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
@@ -12,11 +12,15 @@ _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
 
 def render_text(report: Report) -> str:
     start = report.start
-    lines = [
-        f"Column '{report.column}' from {start.display_name} ({start.unique_id})",
-        f"Start status: {report.start_status.value}"
-        + ("  [full trace]" if report.full_trace else ""),
-    ]
+    column_type = f" ({report.column_type})" if report.column_type else ""
+    lines = [f"Column '{report.column}'{column_type} from {start.display_name} ({start.unique_id})"]
+    if report.values:
+        lines.append(f"Values: {', '.join(report.values)}")
+    lines.append(
+        "Start status: "
+        + _status_with_values(report.start_status, report.start_values)
+        + ("  [full trace]" if report.full_trace else "")
+    )
     for trace in report.traces:
         lines += ["", _DIRECTION_TITLES[trace.direction]]
         lines += _render_levels(trace) or ["  (no neighbors)"]
@@ -36,20 +40,27 @@ def _render_levels(trace: Trace) -> list[str]:
     if not visits:
         return []
     name_width = max(len(visit.node.display_name) for visit in visits)
+    type_width = max(len(visit.column_type or "-") for visit in visits)
     lines = []
     for depth, group in groupby(visits, key=lambda visit: visit.depth):
         label = _level(depth)
         for index, visit in enumerate(group):
             prefix = f"  {label:>3} " if index == 0 else "      "
-            lines.append(prefix + _format_visit(visit, name_width))
+            lines.append(prefix + _format_visit(visit, name_width, type_width))
     return lines
 
 
-def _format_visit(visit: Visit, name_width: int) -> str:
+def _format_visit(visit: Visit, name_width: int, type_width: int) -> str:
     status = visit.status.value
     if visit.unknown_reason is not None:
         status += f" ({visit.unknown_reason.value})"
-    line = f"{visit.node.display_name:<{name_width}}  {visit.node.resource_type:<8}  {status:<9}"
+    line = (
+        f"{visit.node.display_name:<{name_width}}  {visit.node.resource_type:<8}  "
+        f"{visit.column_type or '-':<{type_width}}  {status:<9}"
+    )
+    values = _format_values(visit.status, visit.values)
+    if values:
+        line += f"  {values}"
     return (line + "  <- stop" if visit.stopped else line).rstrip()
 
 
@@ -59,9 +70,9 @@ def _level(depth: int) -> str:
 
 
 def _format_finding(finding: Finding) -> list[str]:
-    head = f"  {_level(finding.depth):>2}  {finding.cause.value:<17}  {finding.node.display_name}"
-    if finding.value is not None:
-        head += f" [{finding.value}]"
+    head = f"  {_level(finding.depth):>2}  {finding.cause.value:<23}  {finding.node.display_name}"
+    if finding.values:
+        head += f" [{', '.join(finding.values)}]"
     if finding.uncertain:
         head += f"  (uncertain: {', '.join(node.display_name for node in finding.candidates)})"
     lines = [head]
@@ -71,5 +82,19 @@ def _format_finding(finding: Finding) -> list[str]:
 
 
 def _format_parent(parent: ParentStatus) -> str:
-    via = f", via {' <- '.join(node.display_name for node in parent.via)}" if parent.via else ""
-    return f"{parent.node.display_name} ({parent.status.value}{via})"
+    details = _status_with_values(parent.status, parent.values)
+    if parent.via:
+        details += f", via {' <- '.join(node.display_name for node in parent.via)}"
+    return f"{parent.node.display_name} ({details})"
+
+
+def _status_with_values(status: Status, values: dict[str, Status]) -> str:
+    formatted = _format_values(status, values)
+    return f"{status.value}; {formatted}" if formatted else status.value
+
+
+def _format_values(status: Status, values: dict[str, Status]) -> str:
+    """Per-value statuses; only meaningful where the column is present."""
+    if status is not Status.PRESENT or not values:
+        return ""
+    return ", ".join(f"{value}={value_status.value}" for value, value_status in values.items())

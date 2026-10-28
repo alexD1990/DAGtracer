@@ -1,5 +1,7 @@
 """Build small synthetic manifests and catalogs for traversal tests."""
 
+import json
+import re
 from pathlib import Path
 
 from dgt.project import DbtProject
@@ -22,11 +24,12 @@ def make_project(edges, columns, ephemeral=(), generated_at=("2024-01-01T00:00:0
     for name, uid in uids.items():
         resource_type = uid.split(".", 1)[0]
         section = "sources" if resource_type == "source" else "nodes"
+        short_name = uid.rsplit(".", 1)[1]
         manifest[section][uid] = {
-            "name": uid.rsplit(".", 1)[1],
+            "name": short_name,
             "resource_type": resource_type,
             "config": {"materialized": "ephemeral" if name in ephemeral else "table"},
-            "relation_name": None if name in ephemeral else f'"db"."main"."{name}"',
+            "relation_name": None if name in ephemeral else f'"db"."main"."{short_name}"',
         }
         if columns.get(name) is not None:
             catalog[section][uid] = {"columns": {c: {"type": "TEXT"} for c in columns[name]}}
@@ -42,3 +45,26 @@ def _uid(name):
     if name.startswith("source:"):
         return f"source.p.{name[7:]}"
     return f"model.p.{name}"
+
+
+class FakeShow:
+    """Stands in for `dbt show`: answers value-count queries from a table.
+
+    `counts`: node short name -> {value: count}; values not listed count 0. The SQL
+    is parsed back, so query construction is exercised too. `queries` records
+    each relation queried.
+    """
+
+    _RELATION = re.compile(r' from "db"\."main"\."([^"]+)" where ')
+    _COUNT = re.compile(r"= '([^']*)' then 1 end\) as (v\d+)")
+
+    def __init__(self, counts):
+        self.counts = counts
+        self.queries = []
+
+    def __call__(self, sql):
+        name = self._RELATION.search(sql).group(1)
+        self.queries.append(name)
+        counts = self.counts.get(name, {})
+        row = {alias: counts.get(value, 0) for value, alias in self._COUNT.findall(sql)}
+        return "noise before\n" + json.dumps({"show": [row]}, indent=2) + "\n"

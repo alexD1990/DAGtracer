@@ -132,6 +132,12 @@ class DbtProject:
             return None
         return {column.lower(): column for column in entry.get("columns", {})}
 
+    def catalog_column_type(self, unique_id: str, column: str) -> str | None:
+        """Data type of a column as recorded in the catalog, if any."""
+        section = "sources" if unique_id.startswith("source.") else "nodes"
+        entry = self.catalog.get(section, {}).get(unique_id) or {}
+        return (entry.get("columns", {}).get(column) or {}).get("type")
+
     @property
     def manifest_generated_at(self) -> datetime | None:
         return _generated_at(self.manifest)

@@ -3,9 +3,10 @@ import pytest
 from dgt.errors import DgtError
 from dgt.findings import Cause, Status
 from dgt.graph import DagGraph, Direction
+from dgt.probes import DbtShow, ValueProbe
 from dgt.traverse import trace_column
 
-from factory import make_project
+from factory import FakeShow, make_project
 
 P = "testproject"
 UP = [Direction.UP]
@@ -231,3 +232,129 @@ def test_stale_catalog_warning():
     )
     (warning,) = trace(project, "a", "x").warnings
     assert warning.startswith("catalog.json (2024-01-01 00:00:00) is older than manifest.json")
+
+
+# Value mode
+
+
+def vtrace(project, start, column, values, counts, full_trace=False):
+    show = FakeShow(counts)
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node(start), column, UP, full_trace,
+        value_probe=ValueProbe(values, show),
+    )
+    return report, show
+
+
+def vfound(report):
+    return [
+        (f.cause.value, f.node.display_name, f.depth, list(f.values))
+        for t in report.traces
+        for f in t.findings
+    ]
+
+
+def test_value_dropped_while_column_kept():
+    project = make_project([("seed:s", "b")], {"seed:s": ["x"], "b": ["x"]})
+    report, _ = vtrace(project, "b", "x", ["k", "m"], {"s": {"k": 1, "m": 1}, "b": {"k": 1}})
+    assert report.start_values == {"k": Status.PRESENT, "m": Status.ABSENT}
+    assert vfound(report) == [
+        ("value_dropped", "b", 0, ["m"]),
+        ("value_present_at_source", "s", -1, ["k"]),
+    ]
+
+
+def test_value_appears():
+    project = make_project([("seed:s", "b")], {"seed:s": ["x"], "b": ["x"]})
+    report, _ = vtrace(project, "b", "x", ["k", "m"], {"s": {"k": 1}, "b": {"k": 1, "m": 1}})
+    assert vfound(report) == [
+        ("value_appears", "b", 0, ["m"]),
+        ("value_present_at_source", "s", -1, ["k"]),
+    ]
+
+
+def test_column_level_takes_precedence_and_skips_value_query():
+    project = make_project([("seed:s", "a")], {"seed:s": ["x"], "a": []})
+    report, show = vtrace(project, "a", "x", ["k", "m"], {"s": {"k": 1}})
+    assert vfound(report) == [("column_dropped", "a", 0, ["k"])]
+    assert show.queries == ["s"]
+
+
+def test_column_change_stops_branch_even_if_value_status_matches():
+    # k is absent in b and (implicitly) in a, but a lacks the column.
+    project = make_project([("a", "b")], {"a": [], "b": ["x"]})
+    report, _ = vtrace(project, "b", "x", ["k"], {})
+    (visit,) = report.traces[0].visits
+    assert visit.stopped
+    # a is not judged; b is, at column level, with no tracked value present.
+    assert vfound(report) == [("column_appears", "b", 0, [])]
+
+
+def test_branch_continues_while_one_value_unchanged():
+    project = make_project([("s", "a"), ("a", "b")], {"s": ["x"], "a": ["x"], "b": ["x"]})
+    counts = {"s": {"k": 1, "m": 1}, "a": {"k": 1}}
+    report, _ = vtrace(project, "b", "x", ["k", "m"], counts)
+    stopped = {v.node.name: v.stopped for v in report.traces[0].visits}
+    assert stopped == {"a": False, "s": True}
+    assert vfound(report) == [
+        ("value_dropped", "b", 0, ["k"]),
+        ("value_dropped", "a", -1, ["m"]),
+    ]
+
+
+def test_unknown_node_transparent_for_values():
+    project = make_project(
+        [("seed:s", "e"), ("e", "b")], {"seed:s": ["x"], "e": None, "b": ["x"]}, ephemeral={"e"}
+    )
+    report, _ = vtrace(project, "b", "x", ["k"], {"s": {"k": 1}})
+    assert vfound(report) == [("value_dropped", "b", 0, ["k"])]
+    (finding,) = report.traces[0].findings
+    assert [n.name for n in finding.candidates] == ["b", "e"]
+
+
+def test_node_reached_again_with_new_live_values_is_expanded():
+    # d <- a <- c and d <- b <- b2 <- c: c is first reached with only k live
+    # and later with m, which must propagate to the seed.
+    project = make_project(
+        [("seed:s", "c"), ("c", "a"), ("c", "b2"), ("b2", "b"), ("a", "d"), ("b", "d")],
+        {name: ["x"] for name in ["seed:s", "c", "a", "b2", "b", "d"]},
+    )
+    both = {"k": 1, "m": 1}
+    counts = {"s": both, "c": both, "d": both, "a": {"k": 1}, "b": {"m": 1}, "b2": {"m": 1}}
+    report, _ = vtrace(project, "d", "x", ["k", "m"], counts)
+    assert ("value_present_at_source", "s", -3, ["k", "m"]) in vfound(report)
+
+
+def test_full_trace_judges_all_values():
+    project = make_project([("seed:s", "b")], {"seed:s": ["x"], "b": ["x"]})
+    counts = {"s": {"k": 1, "m": 1}, "b": {"k": 1}}
+    report, _ = vtrace(project, "b", "x", ["k", "m"], counts, full_trace=True)
+    assert vfound(report) == [
+        ("value_dropped", "b", 0, ["m"]),
+        ("value_present_at_source", "s", -1, ["k", "m"]),
+    ]
+
+
+def test_values_against_real_dbt(project, built_project_dir, dbt_executable):
+    """int_orders_valid filters out status = 'returned'."""
+    show = DbtShow(dbt_executable, built_project_dir, built_project_dir)
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("fct_orders"), "status", UP,
+        value_probe=ValueProbe(["completed", "returned"], show),
+    )
+    assert report.column_type == "VARCHAR"
+    assert vfound(report) == [
+        ("value_dropped", "int_orders_valid", -1, ["returned"]),
+        ("value_present_at_source", "raw_orders", -3, ["completed"]),
+    ]
+    assert parents(report, "int_orders_valid") == {"stg_orders": "present"}
+
+
+def test_string_value_matches_integer_column(project, built_project_dir, dbt_executable):
+    show = DbtShow(dbt_executable, built_project_dir, built_project_dir)
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("stg_orders"), "order_id", UP,
+        value_probe=ValueProbe(["01", "7"], show),
+    )
+    assert report.column_type == "INTEGER"
+    assert report.start_values == {"01": Status.PRESENT, "7": Status.ABSENT}
