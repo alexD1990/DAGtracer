@@ -122,3 +122,9 @@ def test_text_output_explains_no_findings_downstream():
     text = render_text(report)
     assert "Findings (0)\n  No findings: no reached node changes status relative" in text
     assert "column 'x' is absent in a" in text
+
+
+def test_column_level_values_shortened_when_all_absent():
+    project = make_project([("seed:s", "b")], {"seed:s": [], "b": []})
+    text = render(project, "b", "x", ["k", "m"], FakeShow({}))
+    assert "  -1  column_absent_at_source  s [all values absent]\n" in text

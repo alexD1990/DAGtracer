@@ -31,7 +31,9 @@ def render_text(report: Report) -> str:
     findings = [finding for trace in report.traces for finding in trace.findings]
     lines += ["", f"Findings ({len(findings)})"]
     lines += [
-        line for finding in findings for line in _format_finding(finding, with_direction=both)
+        line
+        for finding in findings
+        for line in _format_finding(finding, report.values, with_direction=both)
     ] or [f"  No findings: {_NO_FINDINGS}"]
 
     if report.warnings:
@@ -109,24 +111,42 @@ def _level(depth: int) -> str:
     return f"{depth:+d}" if depth else "0"
 
 
-def _format_finding(finding: Finding, with_direction: bool = False) -> list[str]:
+def _format_finding(
+    finding: Finding, tracked: tuple[str, ...], with_direction: bool = False
+) -> list[str]:
     direction = f"{finding.direction.value:<4}  " if with_direction else ""
     head = (
         f"  {_level(finding.depth):>2}  {direction}{finding.cause.value:<23}  "
         f"{finding.node.display_name}"
     )
     if finding.values:
-        if finding.cause is Cause.COLUMN_APPEARS:
-            listed = ", ".join(f"{value}={status.value}" for value, status in finding.values.items())
-        else:
-            listed = ", ".join(finding.values)
-        head += f" [{listed}]"
+        head += f" [{_format_finding_values(finding, tracked)}]"
     if finding.uncertain:
         head += f"  (uncertain: {', '.join(node.display_name for node in finding.candidates)})"
     lines = [head]
     if finding.parents:
         lines.append(f"        parents: {', '.join(map(_format_parent, finding.parents))}")
     return lines
+
+
+_COLUMN_LEVEL = frozenset(
+    {
+        Cause.COLUMN_DROPPED,
+        Cause.COLUMN_APPEARS,
+        Cause.COLUMN_ABSENT_AT_SOURCE,
+        Cause.COLUMN_ABSENT_AT_LEAF,
+    }
+)
+
+
+def _format_finding_values(finding: Finding, tracked: tuple[str, ...]) -> str:
+    """Value-level findings list names; column-level ones list each value's status."""
+    if finding.cause not in _COLUMN_LEVEL:
+        return ", ".join(finding.values)
+    statuses = set(finding.values.values())
+    if statuses == {Status.ABSENT} and tuple(finding.values) == tracked:
+        return "all values absent"
+    return ", ".join(f"{value}={status.value}" for value, status in finding.values.items())
 
 
 def _format_parent(parent: ParentStatus) -> str:

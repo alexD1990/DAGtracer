@@ -254,7 +254,7 @@ class _Tracer:
         values = [key for key in keys if key is not COLUMN_KEY]
         present_here = [value for value in values if state.values[value] is Status.PRESENT]
         if state.status is Status.ABSENT:
-            return [finding(Cause.COLUMN_ABSENT_AT_SOURCE)]
+            return [finding(Cause.COLUMN_ABSENT_AT_SOURCE, affected=values)]
         if not self.value_mode:
             return [finding(Cause.PRESENT_AT_SOURCE)]
         absent_here = [value for value in values if value not in present_here]
@@ -312,12 +312,7 @@ class _Tracer:
                 if any(not parent.via for parent in with_column)
                 else [via for parent in with_column for via in parent.via]
             )
-            affected = [
-                value
-                for value in values
-                if any(parent.values[value] is Status.PRESENT for parent in with_column)
-            ]
-            return [finding(Cause.COLUMN_DROPPED, parents, unknowns, affected)]
+            return [finding(Cause.COLUMN_DROPPED, parents, unknowns, values)]
 
         if not with_column:
             return [finding(Cause.COLUMN_APPEARS, parents, _unknowns_in(parents), values)]
