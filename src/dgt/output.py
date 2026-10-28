@@ -38,7 +38,7 @@ def _render_levels(trace: Trace) -> list[str]:
     name_width = max(len(visit.node.display_name) for visit in visits)
     lines = []
     for depth, group in groupby(visits, key=lambda visit: visit.depth):
-        label = f"{depth:+d}"
+        label = _level(depth)
         for index, visit in enumerate(group):
             prefix = f"  {label:>3} " if index == 0 else "      "
             lines.append(prefix + _format_visit(visit, name_width))
@@ -53,8 +53,13 @@ def _format_visit(visit: Visit, name_width: int) -> str:
     return (line + "  <- stop" if visit.stopped else line).rstrip()
 
 
+def _level(depth: int) -> str:
+    """Signed level label; the start node is level 0."""
+    return f"{depth:+d}" if depth else "0"
+
+
 def _format_finding(finding: Finding) -> list[str]:
-    head = f"  {finding.depth:+d}  {finding.cause.value:<17}  {finding.node.display_name}"
+    head = f"  {_level(finding.depth):>2}  {finding.cause.value:<17}  {finding.node.display_name}"
     if finding.value is not None:
         head += f" [{finding.value}]"
     if finding.uncertain:

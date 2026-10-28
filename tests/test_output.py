@@ -47,7 +47,7 @@ def test_text_output_lists_parents_of_finding():
     )
     assert render_text(report).endswith(
         "Findings (1)\n"
-        "  +0  column_appears     b\n"
+        "   0  column_appears     b\n"
         "        parents: a (absent)\n"
     )
 
@@ -60,6 +60,6 @@ def test_text_output_marks_uncertain_findings():
         project, DagGraph(project.manifest), project.find_node("c"), "x", [Direction.UP]
     )
     assert render_text(report).endswith(
-        "  +0  column_appears     c  (uncertain: c, b)\n"
+        "   0  column_appears     c  (uncertain: c, b)\n"
         "        parents: a (absent, via b)\n"
     )
