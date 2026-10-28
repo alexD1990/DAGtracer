@@ -16,7 +16,8 @@ BUILD_ARTIFACTS = ("target", "logs", "dbt_packages", "*.duckdb", "*.duckdb.wal",
 BUILD_ATTEMPTS = 3
 
 
-def _dbt_executable() -> str:
+@pytest.fixture(scope="session")
+def dbt_executable() -> str:
     local = Path(sys.executable).parent / "dbt"
     found = str(local) if local.exists() else shutil.which("dbt")
     if found is None:
@@ -25,11 +26,11 @@ def _dbt_executable() -> str:
 
 
 @pytest.fixture(scope="session")
-def built_project_dir(tmp_path_factory) -> Path:
+def built_project_dir(tmp_path_factory, dbt_executable) -> Path:
     """A copy of testproject with seeds/models built and catalog generated."""
     project_dir = tmp_path_factory.mktemp("dbt") / "testproject"
     shutil.copytree(TESTPROJECT, project_dir, ignore=shutil.ignore_patterns(*BUILD_ARTIFACTS))
-    dbt = _dbt_executable()
+    dbt = dbt_executable
     for _ in range(BUILD_ATTEMPTS):
         failure = _build(dbt, project_dir)
         if failure is None:
