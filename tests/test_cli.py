@@ -31,8 +31,8 @@ def test_traces_upstream(built_project_dir, capsys):
     code = main(["dim_customers", "-c", "last_name", "--project-dir", str(built_project_dir)])
     assert code == EXIT_OK
     out = capsys.readouterr().out
-    assert "Findings (2)" in out
-    assert "column_appears  int_customers_slim -> dim_customers" in out
+    assert "Findings (1)" in out
+    assert "present_at_source  raw_customers" in out
 
 
 def test_unknown_start_status_is_tool_error(built_project_dir, capsys):

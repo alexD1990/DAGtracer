@@ -2,12 +2,14 @@
 
 From the start node, the traversal continues through nodes whose status
 matches the status it arrived with and stops a branch at the first node where
-the status changes; that edge is a finding. Unknown nodes (ephemeral, not in
-catalog) inherit the arriving status and are traversed through. With
-`full_trace`, branches never stop and every changing edge is reported.
+the status changes. Unknown nodes (ephemeral, not in catalog) inherit the
+arriving status and are traversed through. With `full_trace`, branches never
+stop. Each node is probed and enqueued once.
 
-Each node is probed and enqueued once, but every edge into it is checked, so
-diamonds report one finding per changing edge.
+Where the traversal stops and what counts as a finding are separate: findings
+are judged per node against the node's parents (see `Finding`), and only for
+nodes the traversal continued through. A node where a branch stops is shown
+but is not itself a finding.
 """
 
 from __future__ import annotations
@@ -15,8 +17,17 @@ from __future__ import annotations
 from collections import deque
 
 from dgt.errors import DgtError
-from dgt.findings import Cause, Finding, Report, Status, Trace, UnknownReason, Visit
-from dgt.graph import DagGraph, Direction
+from dgt.findings import (
+    Cause,
+    Finding,
+    ParentStatus,
+    Report,
+    Status,
+    Trace,
+    UnknownReason,
+    Visit,
+)
+from dgt.graph import TERMINAL_UPSTREAM_TYPES, DagGraph, Direction
 from dgt.probes import ColumnProbe
 from dgt.project import DbtProject, Node
 
@@ -91,10 +102,6 @@ def _trace(
                 result.status is not Status.UNKNOWN
                 and result.status is not current.effective_status
             )
-            if changed:
-                trace.findings.append(
-                    _finding(current, node, result.status, direction, current.depth + step)
-                )
             if uid in visits:
                 continue
             visits[uid] = Visit(
@@ -112,20 +119,36 @@ def _trace(
             )
             queue.append(uid)
 
+    for visit in visits.values():
+        if visit.status is Status.UNKNOWN or (visit.stopped and not full_trace):
+            continue
+        finding = _judge(project, graph, probe, visit, direction)
+        if finding is not None:
+            trace.findings.append(finding)
+    trace.findings.sort(key=lambda f: (abs(f.depth), f.node.display_name))
     trace.visits = [visit for uid, visit in visits.items() if uid != start.unique_id]
     return trace
 
 
-def _finding(
-    current: Visit, node: Node, status: Status, direction: Direction, depth: int
-) -> Finding:
-    if direction is Direction.UP:
-        upstream, downstream = node, current.node
-        upstream_status = status
-    else:
-        upstream, downstream = current.node, node
-        upstream_status = current.effective_status
-    cause = Cause.COLUMN_DROPPED if upstream_status is Status.PRESENT else Cause.COLUMN_APPEARS
-    return Finding(
-        cause=cause, upstream=upstream, downstream=downstream, direction=direction, depth=depth
+def _judge(
+    project: DbtProject, graph: DagGraph, probe: ColumnProbe, visit: Visit, direction: Direction
+) -> Finding | None:
+    """Classify a node with known status against its parents' statuses."""
+    node = visit.node
+
+    def finding(cause: Cause, parents: tuple[ParentStatus, ...] = ()) -> Finding:
+        return Finding(cause, node, parents, direction, visit.depth)
+
+    if node.resource_type in TERMINAL_UPSTREAM_TYPES:
+        return finding(Cause.PRESENT_AT_SOURCE) if visit.status is Status.PRESENT else None
+
+    parents = tuple(
+        ParentStatus(parent, probe.probe(parent).status)
+        for parent in map(project.node, graph.neighbors(node.unique_id, Direction.UP))
     )
+    any_parent_present = any(parent.status is Status.PRESENT for parent in parents)
+    if visit.status is Status.ABSENT and any_parent_present:
+        return finding(Cause.COLUMN_DROPPED, parents)
+    if visit.status is Status.PRESENT and not any_parent_present:
+        return finding(Cause.COLUMN_APPEARS, parents)
+    return None

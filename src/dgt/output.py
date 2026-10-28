@@ -23,7 +23,7 @@ def render_text(report: Report) -> str:
 
     findings = [finding for trace in report.traces for finding in trace.findings]
     lines += ["", f"Findings ({len(findings)})"]
-    lines += [f"  {_format_finding(finding)}" for finding in findings] or ["  none"]
+    lines += [line for finding in findings for line in _format_finding(finding)] or ["  none"]
 
     if report.warnings:
         lines += ["", "Warnings"]
@@ -53,7 +53,12 @@ def _format_visit(visit: Visit, name_width: int) -> str:
     return (line + "  <- stop" if visit.stopped else line).rstrip()
 
 
-def _format_finding(finding: Finding) -> str:
-    edge = f"{finding.upstream.display_name} -> {finding.downstream.display_name}"
+def _format_finding(finding: Finding) -> list[str]:
     value = f" [{finding.value}]" if finding.value is not None else ""
-    return f"{finding.depth:+d}  {finding.cause.value:<15} {edge}{value}"
+    lines = [f"  {finding.depth:+d}  {finding.cause.value:<17}  {finding.node.display_name}{value}"]
+    if finding.parents:
+        parents = ", ".join(
+            f"{parent.node.display_name} ({parent.status.value})" for parent in finding.parents
+        )
+        lines.append(f"        parents: {parents}")
+    return lines

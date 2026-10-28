@@ -23,7 +23,7 @@ def test_text_output_groups_levels():
         "   -2 s  seed      present\n"
         "\n"
         "Findings (1)\n"
-        "  -1  column_appears  b -> c\n"
+        "  -2  present_at_source  s\n"
     )
 
 
@@ -32,9 +32,21 @@ def test_text_output_lists_warnings_and_empty_trace():
         [], {"a": ["x"]}, generated_at=("2024-02-01T00:00:00Z", "2024-01-01T00:00:00Z")
     )
     report = trace_column(
-        project, DagGraph(project.manifest), project.find_node("a"), "x", [Direction.UP]
+        project, DagGraph(project.manifest), project.find_node("a"), "y", [Direction.UP]
     )
     text = render_text(report)
     assert "  (no neighbors)\n" in text
     assert "Findings (0)\n  none\n" in text
     assert "\nWarnings\n  catalog.json" in text
+
+
+def test_text_output_lists_parents_of_finding():
+    project = make_project([("a", "b")], {"a": [], "b": ["x"]})
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("b"), "x", [Direction.UP]
+    )
+    assert render_text(report).endswith(
+        "Findings (1)\n"
+        "  +0  column_appears     b\n"
+        "        parents: a (absent)\n"
+    )

@@ -23,22 +23,31 @@ class UnknownReason(str, Enum):
 class Cause(str, Enum):
     COLUMN_DROPPED = "column_dropped"
     COLUMN_APPEARS = "column_appears"
+    PRESENT_AT_SOURCE = "present_at_source"
     VALUE_DROPPED = "value_dropped"
     VALUE_APPEARS = "value_appears"
 
 
 @dataclass(frozen=True)
-class Finding:
-    """A DAG edge across which status changes.
+class ParentStatus:
+    node: Node
+    status: Status
 
-    `upstream` and `downstream` are in data-flow order (parent, child),
-    independent of the traversal direction that found the edge. `depth` is the
-    signed level of the node where the traversal observed the change.
+
+@dataclass(frozen=True)
+class Finding:
+    """A node where the column starts or stops, judged against its parents.
+
+    - column_dropped: the node is absent and at least one known parent is present.
+    - column_appears: the node is present and no known parent is present.
+    - present_at_source: a seed or source where the column is present.
+
+    `depth` is the node's signed level in the traversal that found it.
     """
 
     cause: Cause
-    upstream: Node
-    downstream: Node
+    node: Node
+    parents: tuple[ParentStatus, ...]
     direction: Direction
     depth: int
     value: str | None = None
