@@ -11,13 +11,17 @@ from __future__ import annotations
 import difflib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from dgt.errors import AmbiguousNodeError, ArtifactError, NodeNotFoundError
+
+# A catalog older than the manifest by less than this is still considered
+# current; covers clock jitter and the gap between parse and catalog build.
+STALE_CATALOG_TOLERANCE = timedelta(seconds=60)
 
 # Resource types a bare short name can match. Sources must be named as
 # `source_name.table_name` or by unique_id.
@@ -136,9 +140,11 @@ class DbtProject:
         return _generated_at(self.catalog)
 
     def catalog_is_stale(self) -> bool:
-        """True if the catalog was generated before the manifest."""
+        """True if the catalog predates the manifest by more than STALE_CATALOG_TOLERANCE."""
         manifest_ts, catalog_ts = self.manifest_generated_at, self.catalog_generated_at
-        return manifest_ts is not None and catalog_ts is not None and catalog_ts < manifest_ts
+        if manifest_ts is None or catalog_ts is None:
+            return False
+        return manifest_ts - catalog_ts > STALE_CATALOG_TOLERANCE
 
 
 def _names_for(unique_id: str, raw: dict[str, Any]) -> set[str]:

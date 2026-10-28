@@ -134,10 +134,20 @@ def test_short_name_prefers_model_over_source_table(tmp_path):
     assert project.find_node("raw.payments").unique_id == "source.a.raw.payments"
 
 
-def test_stale_catalog_detected(tmp_path):
+@pytest.mark.parametrize(
+    "catalog_at, stale",
+    [
+        ("2024-01-01T00:00:00Z", True),
+        ("2024-01-31T23:58:59Z", True),
+        ("2024-01-31T23:59:00Z", False),
+        ("2024-01-31T23:59:30Z", False),
+        ("2024-02-01T00:00:05Z", False),
+    ],
+)
+def test_stale_catalog_tolerates_one_minute(tmp_path, catalog_at, stale):
     manifest = _manifest(generated_at="2024-02-01T00:00:00Z")
-    catalog = {"metadata": {"generated_at": "2024-01-01T00:00:00Z"}, "nodes": {}, "sources": {}}
-    assert DbtProject(tmp_path, manifest, catalog).catalog_is_stale()
+    catalog = {"metadata": {"generated_at": catalog_at}, "nodes": {}, "sources": {}}
+    assert DbtProject(tmp_path, manifest, catalog).catalog_is_stale() is stale
 
 
 def test_catalog_section_matches_node_kind(tmp_path):
