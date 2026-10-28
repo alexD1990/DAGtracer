@@ -164,7 +164,9 @@ class _Tracer:
             else:
                 continue
             trace.findings.extend(self._judge(entry, judged, direction))
-        trace.findings.sort(key=lambda f: (abs(f.depth), f.node.display_name, f.cause.value))
+        trace.findings.sort(
+            key=lambda f: (abs(f.depth), f.node.display_name, f.cause.value, f.uncertain)
+        )
         trace.visits = [
             Visit(
                 node=entry.node,
@@ -245,19 +247,27 @@ class _Tracer:
         if not with_column:
             return [finding(Cause.COLUMN_APPEARS, parents, _unknowns_in(parents), values)]
 
-        dropped, dropped_unknowns, appears = [], [], []
+        # Findings are grouped per (cause, uncertain): certain and uncertain
+        # drops of different values at one node are reported separately.
+        dropped_certain, dropped_uncertain, dropped_unknowns, appears = [], [], [], []
         for value in values:
             sources = [p for p in parents if p.values.get(value) is Status.PRESENT]
             if state.values[value] is Status.ABSENT and sources:
-                dropped.append(value)
-                if not any(not parent.via for parent in sources):
+                if any(not parent.via for parent in sources):
+                    dropped_certain.append(value)
+                else:
+                    dropped_uncertain.append(value)
                     dropped_unknowns += [via for parent in sources for via in parent.via]
             elif state.values[value] is Status.PRESENT and not sources:
                 appears.append(value)
 
         findings = []
-        if dropped:
-            findings.append(finding(Cause.VALUE_DROPPED, parents, dropped_unknowns, dropped))
+        if dropped_certain:
+            findings.append(finding(Cause.VALUE_DROPPED, parents, None, dropped_certain))
+        if dropped_uncertain:
+            findings.append(
+                finding(Cause.VALUE_DROPPED, parents, dropped_unknowns, dropped_uncertain)
+            )
         if appears:
             findings.append(
                 finding(Cause.VALUE_APPEARS, parents, _unknowns_in(parents), appears)

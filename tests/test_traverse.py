@@ -406,3 +406,18 @@ def test_later_query_failure_makes_node_unknown_and_transparent():
         "model.p.a: value query failed; status unknown, traversed through: "
         "dbt show failed (exit 1) ... Catalog Error: Table a does not exist"
     ]
+
+
+def test_certain_and_uncertain_drops_at_one_node_are_separate_findings():
+    # k reaches b directly from s; m only through the ephemeral e.
+    project = make_project(
+        [("seed:s", "b"), ("seed:t", "e"), ("e", "b")],
+        {"seed:s": ["x"], "seed:t": ["x"], "e": None, "b": ["x"]},
+        ephemeral={"e"},
+    )
+    report, _ = vtrace(project, "b", "x", ["k", "m"], {"s": {"k": 1}, "t": {"m": 1}})
+    dropped = [f for f in report.traces[0].findings if f.cause.value == "value_dropped"]
+    assert [(list(f.values), f.uncertain, [n.name for n in f.candidates]) for f in dropped] == [
+        (["k"], False, []),
+        (["m"], True, ["b", "e"]),
+    ]

@@ -73,7 +73,8 @@ class Finding:
     mode only); for column_appears these are all tracked values. `depth` is the
     node's signed level in the traversal that found it. A finding that depends
     on an unknown node is `uncertain`; `candidates` then lists the nodes where
-    the change may actually happen, this node first.
+    the change may actually happen, this node first. There is at most one
+    finding per (node, cause, uncertain).
     """
 
     cause: Cause
