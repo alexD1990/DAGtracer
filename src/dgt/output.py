@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from functools import partial
 from itertools import groupby
 
 from dgt.findings import Cause, Finding, ParentStatus, Report, Status, Trace, Visit
 from dgt.graph import Direction
 
 _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
+# Text-only grouping of downstream findings.
+_DOWNSTREAM_GROUPS = (
+    ("Reaches", {Cause.PRESENT_AT_LEAF, Cause.VALUE_PRESENT_AT_LEAF}),
+    ("Stops at", {Cause.COLUMN_DROPPED, Cause.VALUE_DROPPED}),
+    ("Appears at", {Cause.COLUMN_APPEARS, Cause.VALUE_APPEARS}),
+    ("Absent at leaf", {Cause.COLUMN_ABSENT_AT_LEAF, Cause.VALUE_ABSENT_AT_LEAF}),
+)
 _NO_FINDINGS = (
     "no reached node changes status relative to the start node, and no branch ends "
     "at a seed, source or leaf with a known status."
@@ -30,11 +38,24 @@ def render_text(report: Report) -> str:
 
     findings = [finding for trace in report.traces for finding in trace.findings]
     lines += ["", f"Findings ({len(findings)})"]
-    lines += [
-        line
-        for finding in findings
-        for line in _format_finding(finding, report.values, with_direction=both)
-    ] or [f"  No findings: {_NO_FINDINGS}"]
+    if not findings:
+        lines.append(f"  No findings: {_NO_FINDINGS}")
+    for trace in report.traces:
+        if not trace.findings:
+            continue
+        indent = ""
+        if both:
+            lines.append(f"  {_DIRECTION_TITLES[trace.direction]}")
+            indent = "  "
+        format_ = partial(_format_finding, tracked=report.values, with_direction=both)
+        if trace.direction is Direction.UP:
+            lines += [indent + line for f in trace.findings for line in format_(f)]
+            continue
+        for title, causes in _DOWNSTREAM_GROUPS:
+            group = [f for f in trace.findings if f.cause in causes]
+            if group:
+                lines.append(f"{indent}  {title}")
+                lines += [f"{indent}  {line}" for f in group for line in format_(f)]
 
     if report.warnings:
         lines += ["", "Warnings"]

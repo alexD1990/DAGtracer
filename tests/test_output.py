@@ -107,9 +107,12 @@ def test_text_output_both_directions():
         "   +1 c  model     -     absent     <- stop\n"
         "\n"
         "Findings (2)\n"
-        "  -1  up    column_appears           a\n"
-        "  +1  down  column_dropped           c\n"
-        "        parents: b (present)\n"
+        "  Upstream\n"
+        "    -1  up    column_appears           a\n"
+        "  Downstream\n"
+        "    Stops at\n"
+        "      +1  down  column_dropped           c\n"
+        "            parents: b (present)\n"
     )
 
 
@@ -128,3 +131,25 @@ def test_column_level_values_shortened_when_all_absent():
     project = make_project([("seed:s", "b")], {"seed:s": [], "b": []})
     text = render(project, "b", "x", ["k", "m"], FakeShow({}))
     assert "  -1  column_absent_at_source  s [all values absent]\n" in text
+
+
+def test_downstream_findings_grouped_by_reach():
+    # a -> b (keeps x, leaf), a -> c (drops x) -> d (x appears again, leaf)
+    project = make_project(
+        [("a", "b"), ("a", "c"), ("c", "d")], {"a": ["x"], "b": ["x"], "c": [], "d": ["x"]}
+    )
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("a"), "x", [Direction.DOWN],
+        full_trace=True,
+    )
+    assert render_text(report).split("Findings (4)\n")[1] == (
+        "  Reaches\n"
+        "    +1  present_at_leaf          b\n"
+        "    +2  present_at_leaf          d\n"
+        "  Stops at\n"
+        "    +1  column_dropped           c\n"
+        "          parents: a (present)\n"
+        "  Appears at\n"
+        "    +2  column_appears           d\n"
+        "          parents: c (absent)\n"
+    )
