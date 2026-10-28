@@ -119,9 +119,20 @@ def test_source_start_is_origin(project):
     assert found(report) == [("present_at_source", "raw.payments", 0)]
 
 
-def test_unknown_start_is_error(project):
-    with pytest.raises(DgtError, match="ephemeral"):
+def test_ephemeral_start_suggests_neighbors(project):
+    with pytest.raises(DgtError) as exc:
         trace(project, "int_order_payments", "total_paid")
+    assert str(exc.value) == (
+        "status of column 'total_paid' in model.testproject.int_order_payments is unknown: "
+        "ephemeral models have no relation in catalog.json; "
+        "start from a parent (stg_payments) or a child (fct_orders) instead"
+    )
+
+
+def test_start_missing_from_catalog_suggests_docs_generate():
+    project = make_project([], {"a": None})
+    with pytest.raises(DgtError, match=r"not in catalog.json; run `dbt docs generate`"):
+        trace(project, "a", "x")
 
 
 def test_fresh_project_has_no_warnings(project):

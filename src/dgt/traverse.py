@@ -43,10 +43,7 @@ def trace_column(
     probe = ColumnProbe(project, column)
     start_result = probe.probe(start)
     if start_result.status is Status.UNKNOWN:
-        raise DgtError(
-            f"status of column '{column}' in {start.unique_id} is unknown "
-            f"({start_result.unknown_reason.value}); start from a node in catalog.json"
-        )
+        raise DgtError(_unknown_start_message(project, graph, start, column))
 
     report = Report(
         start=start, column=column, start_status=start_result.status, full_trace=full_trace
@@ -75,6 +72,26 @@ def trace_column(
         for uid in missing
     )
     return report
+
+
+def _unknown_start_message(project: DbtProject, graph: DagGraph, start: Node, column: str) -> str:
+    message = f"status of column '{column}' in {start.unique_id} is unknown"
+    if not start.is_ephemeral:
+        return (
+            f"{message}: the node is not in catalog.json; "
+            f"run `dbt docs generate` in {project.project_dir}"
+        )
+    hints = []
+    for label, direction in (("parent", Direction.UP), ("child", Direction.DOWN)):
+        names = [
+            node.display_name
+            for node in map(project.node, graph.neighbors(start.unique_id, direction))
+            if not node.is_ephemeral
+        ]
+        if names:
+            hints.append(f"a {label} ({', '.join(names)})")
+    suggestion = f"; start from {' or '.join(hints)} instead" if hints else ""
+    return f"{message}: ephemeral models have no relation in catalog.json{suggestion}"
 
 
 def _trace(
