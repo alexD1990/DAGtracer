@@ -21,9 +21,18 @@ def found(report):
     return [(f.cause.value, f.node.display_name, f.depth) for t in report.traces for f in t.findings]
 
 
-def parents(report, name):
+def finding_at(report, name):
     (finding,) = [f for t in report.traces for f in t.findings if f.node.display_name == name]
-    return {p.node.display_name: p.status.value for p in finding.parents}
+    return finding
+
+
+def parents(report, name):
+    return {p.node.display_name: p.status.value for p in finding_at(report, name).parents}
+
+
+def candidates(report, name):
+    finding = finding_at(report, name)
+    return [n.display_name for n in finding.candidates] if finding.uncertain else None
 
 
 def levels(report):
@@ -95,6 +104,15 @@ def test_column_nowhere_traverses_everything_without_findings(project):
     assert levels(report) == {"raw.payments": (-1, "absent")}
 
 
+def test_ephemeral_parent_is_transparent(project):
+    report = trace(project, "fct_orders", "total_paid")
+    assert found(report) == [("column_appears", "fct_orders", 0)]
+    assert candidates(report, "fct_orders") == ["fct_orders", "int_order_payments"]
+    (via_ephemeral,) = [p for p in finding_at(report, "fct_orders").parents if p.via]
+    assert via_ephemeral.node.display_name == "stg_payments"
+    assert [n.display_name for n in via_ephemeral.via] == ["int_order_payments"]
+
+
 def test_source_start_is_origin(project):
     report = trace(project, "raw.payments", "method")
     assert report.traces[0].visits == []
@@ -117,9 +135,44 @@ def test_not_in_catalog_is_traversed_through_with_warning():
     project = make_project([("a", "b"), ("b", "c")], {"a": ["x"], "b": None, "c": ["x"]})
     report = trace(project, "c", "x")
     assert levels(report) == {"b": (-1, "unknown"), "a": (-2, "present")}
+    assert found(report) == [("column_appears", "a", -2)]
+    assert candidates(report, "a") is None
     assert report.warnings == [
         "model.p.b is not in catalog.json; column status unknown, traversed through"
     ]
+
+
+def test_appears_behind_unknown_node_is_uncertain():
+    project = make_project([("a", "b"), ("b", "c")], {"a": [], "b": None, "c": ["x"]})
+    report = trace(project, "c", "x")
+    assert found(report) == [("column_appears", "c", 0)]
+    assert candidates(report, "c") == ["c", "b"]
+    assert parents(report, "c") == {"a": "absent"}
+
+
+def test_dropped_through_ephemeral_is_uncertain():
+    project = make_project(
+        [("a", "b"), ("b", "c")], {"a": ["x"], "b": None, "c": []}, ephemeral={"b"}
+    )
+    report = trace(project, "c", "x")
+    assert found(report) == [("column_dropped", "c", 0)]
+    assert candidates(report, "c") == ["c", "b"]
+
+
+def test_dropped_with_direct_present_parent_is_certain():
+    project = make_project(
+        [("a", "b"), ("b", "c"), ("a", "c")], {"a": ["x"], "b": None, "c": []}, ephemeral={"b"}
+    )
+    report = trace(project, "c", "x")
+    assert candidates(report, "c") is None
+    assert finding_at(report, "c").parents[0].via == ()
+
+
+def test_unknown_parent_without_parents_makes_appearance_uncertain():
+    project = make_project([("b", "c")], {"b": None, "c": ["x"]})
+    report = trace(project, "c", "x")
+    assert candidates(report, "c") == ["c", "b"]
+    assert parents(report, "c") == {"b": "unknown"}
 
 
 def test_diamond_judges_each_branch():

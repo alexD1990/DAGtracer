@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from itertools import groupby
 
-from dgt.findings import Finding, Report, Trace, Visit
+from dgt.findings import Finding, ParentStatus, Report, Trace, Visit
 from dgt.graph import Direction
 
 _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
@@ -54,11 +54,17 @@ def _format_visit(visit: Visit, name_width: int) -> str:
 
 
 def _format_finding(finding: Finding) -> list[str]:
-    value = f" [{finding.value}]" if finding.value is not None else ""
-    lines = [f"  {finding.depth:+d}  {finding.cause.value:<17}  {finding.node.display_name}{value}"]
+    head = f"  {finding.depth:+d}  {finding.cause.value:<17}  {finding.node.display_name}"
+    if finding.value is not None:
+        head += f" [{finding.value}]"
+    if finding.uncertain:
+        head += f"  (uncertain: {', '.join(node.display_name for node in finding.candidates)})"
+    lines = [head]
     if finding.parents:
-        parents = ", ".join(
-            f"{parent.node.display_name} ({parent.status.value})" for parent in finding.parents
-        )
-        lines.append(f"        parents: {parents}")
+        lines.append(f"        parents: {', '.join(map(_format_parent, finding.parents))}")
     return lines
+
+
+def _format_parent(parent: ParentStatus) -> str:
+    via = f", via {' <- '.join(node.display_name for node in parent.via)}" if parent.via else ""
+    return f"{parent.node.display_name} ({parent.status.value}{via})"

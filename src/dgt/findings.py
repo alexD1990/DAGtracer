@@ -30,8 +30,16 @@ class Cause(str, Enum):
 
 @dataclass(frozen=True)
 class ParentStatus:
+    """A parent as seen when judging a child.
+
+    Unknown parents are transparent: their own parents stand in for them, and
+    `via` lists the unknown nodes passed through, nearest the child first. An
+    unknown parent with no parents of its own is kept with status unknown.
+    """
+
     node: Node
     status: Status
+    via: tuple[Node, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -42,7 +50,9 @@ class Finding:
     - column_appears: the node is present and no known parent is present.
     - present_at_source: a seed or source where the column is present.
 
-    `depth` is the node's signed level in the traversal that found it.
+    `depth` is the node's signed level in the traversal that found it. A
+    finding that depends on an unknown node is `uncertain`; `candidates` then
+    lists the nodes where the change may actually happen, this node first.
     """
 
     cause: Cause
@@ -50,6 +60,8 @@ class Finding:
     parents: tuple[ParentStatus, ...]
     direction: Direction
     depth: int
+    uncertain: bool = False
+    candidates: tuple[Node, ...] = ()
     value: str | None = None
 
 

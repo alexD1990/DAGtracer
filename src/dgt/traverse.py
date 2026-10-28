@@ -133,22 +133,57 @@ def _trace(
 def _judge(
     project: DbtProject, graph: DagGraph, probe: ColumnProbe, visit: Visit, direction: Direction
 ) -> Finding | None:
-    """Classify a node with known status against its parents' statuses."""
+    """Classify a node with known status against its (resolved) parents' statuses."""
     node = visit.node
 
-    def finding(cause: Cause, parents: tuple[ParentStatus, ...] = ()) -> Finding:
-        return Finding(cause, node, parents, direction, visit.depth)
+    def finding(
+        cause: Cause, parents: tuple[ParentStatus, ...] = (), unknowns: list[Node] | None = None
+    ) -> Finding:
+        candidates = tuple(dict.fromkeys([node, *unknowns])) if unknowns else ()
+        return Finding(
+            cause, node, parents, direction, visit.depth,
+            uncertain=bool(candidates), candidates=candidates,
+        )
 
     if node.resource_type in TERMINAL_UPSTREAM_TYPES:
         return finding(Cause.PRESENT_AT_SOURCE) if visit.status is Status.PRESENT else None
 
-    parents = tuple(
-        ParentStatus(parent, probe.probe(parent).status)
-        for parent in map(project.node, graph.neighbors(node.unique_id, Direction.UP))
-    )
-    any_parent_present = any(parent.status is Status.PRESENT for parent in parents)
-    if visit.status is Status.ABSENT and any_parent_present:
-        return finding(Cause.COLUMN_DROPPED, parents)
-    if visit.status is Status.PRESENT and not any_parent_present:
-        return finding(Cause.COLUMN_APPEARS, parents)
+    parents = _resolved_parents(project, graph, probe, node.unique_id)
+    present = [parent for parent in parents if parent.status is Status.PRESENT]
+    if visit.status is Status.ABSENT and present:
+        if any(not parent.via for parent in present):
+            return finding(Cause.COLUMN_DROPPED, parents)
+        return finding(
+            Cause.COLUMN_DROPPED, parents, [via for parent in present for via in parent.via]
+        )
+    if visit.status is Status.PRESENT and not present:
+        unknowns = [via for parent in parents for via in parent.via]
+        unknowns += [parent.node for parent in parents if parent.status is Status.UNKNOWN]
+        return finding(Cause.COLUMN_APPEARS, parents, unknowns)
     return None
+
+
+def _resolved_parents(
+    project: DbtProject, graph: DagGraph, probe: ColumnProbe, unique_id: str
+) -> tuple[ParentStatus, ...]:
+    """Parents of a node, with unknown parents replaced by their own parents.
+
+    Breadth-first, so a node reachable both directly and through unknown nodes
+    is listed with its shortest `via`.
+    """
+    resolved: dict[str, ParentStatus] = {}
+    expanded: set[str] = set()
+    queue = deque((uid, ()) for uid in graph.neighbors(unique_id, Direction.UP))
+    while queue:
+        uid, via = queue.popleft()
+        if uid in resolved or uid in expanded:
+            continue
+        node = project.node(uid)
+        status = probe.probe(node).status
+        grandparents = graph.neighbors(uid, Direction.UP)
+        if status is Status.UNKNOWN and grandparents:
+            expanded.add(uid)
+            queue.extend((grandparent, (*via, node)) for grandparent in grandparents)
+        else:
+            resolved[uid] = ParentStatus(node, status, via)
+    return tuple(resolved.values())

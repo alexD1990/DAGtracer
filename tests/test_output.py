@@ -50,3 +50,16 @@ def test_text_output_lists_parents_of_finding():
         "  +0  column_appears     b\n"
         "        parents: a (absent)\n"
     )
+
+
+def test_text_output_marks_uncertain_findings():
+    project = make_project(
+        [("a", "b"), ("b", "c")], {"a": [], "b": None, "c": ["x"]}, ephemeral={"b"}
+    )
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("c"), "x", [Direction.UP]
+    )
+    assert render_text(report).endswith(
+        "  +0  column_appears     c  (uncertain: c, b)\n"
+        "        parents: a (absent, via b)\n"
+    )
