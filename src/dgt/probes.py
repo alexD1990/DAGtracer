@@ -120,6 +120,8 @@ class Prober:
         self.values: list[str] = value_probe.values if value_probe else []
         self._cache: dict[str, NodeState] = {}
         self._query_succeeded = False
+        self.value_queries = 0
+        self.query_errors = 0
 
     def state(self, node: Node) -> NodeState:
         cached = self._cache.get(node.unique_id)
@@ -135,11 +137,13 @@ class Prober:
         column = self.column_probe.probe(node)
         if column.status is not Status.PRESENT or self.value_probe is None:
             return NodeState(column, {value: column.status for value in self.values})
+        self.value_queries += 1
         try:
             values = self.value_probe.probe(node, column.column_name)
         except DgtError as exc:
             if not self._query_succeeded:
                 raise DgtError(f"first value query failed ({node.unique_id}): {exc}") from exc
+            self.query_errors += 1
             failed = ProbeResult(
                 Status.UNKNOWN,
                 UnknownReason.QUERY_ERROR,

@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import partial
 from itertools import groupby
+from typing import Any
 
 from dgt.findings import Cause, Finding, ParentStatus, Report, Status, Trace, Visit
 from dgt.graph import Direction
+from dgt.project import Node
 
 _DIRECTION_TITLES = {Direction.UP: "Upstream", Direction.DOWN: "Downstream"}
 # Text-only grouping of downstream findings.
@@ -36,7 +41,7 @@ def render_text(report: Report) -> str:
     both = len(report.traces) > 1
     lines += _render_both(report) if both else _render_single(report.traces[0])
 
-    findings = [finding for trace in report.traces for finding in trace.findings]
+    findings = report.findings
     lines += ["", f"Findings ({len(findings)})"]
     if not findings:
         lines.append(f"  No findings: {_NO_FINDINGS}")
@@ -187,3 +192,188 @@ def _format_values(status: Status, values: dict[str, Status]) -> str:
     if status is not Status.PRESENT or not values:
         return ""
     return ", ".join(f"{value}={value_status.value}" for value, value_status in values.items())
+
+
+# JSON and NDJSON. The contract is described by schema/dgt-output-1.0.schema.json:
+# bump the minor version for added fields, the major version for removed or
+# changed ones.
+
+SCHEMA_VERSION = "1.0"
+
+
+@dataclass(frozen=True)
+class RunMeta:
+    """Run facts that are not part of the traversal result."""
+
+    tool_version: str
+    direction: str
+    target: str | None
+    started_at: str
+    finished_at: str
+
+
+def utc_timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def run_status(report: Report) -> str:
+    return "partial" if report.partial else "complete"
+
+
+def build_document(report: Report, meta: RunMeta) -> dict[str, Any]:
+    by_direction = {trace.direction: trace for trace in report.traces}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tool_version": meta.tool_version,
+        "status": run_status(report),
+        "run": {**_run_header(report, meta), "finished_at": meta.finished_at,
+                "stats": _stats(report)},
+        "traversals": {
+            direction.value: (
+                {"nodes": [_visit_json(v) for v in _ordered_visits(by_direction[direction])]}
+                if direction in by_direction
+                else None
+            )
+            for direction in (Direction.UP, Direction.DOWN)
+        },
+        "findings": [_finding_json(finding) for finding in report.findings],
+        "warnings": list(report.warnings),
+        "error": None,
+    }
+
+
+def error_document(message: str, meta: RunMeta) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "tool_version": meta.tool_version,
+        "status": "error",
+        "run": None,
+        "traversals": {"up": None, "down": None},
+        "findings": [],
+        "warnings": [],
+        "error": {"message": message},
+    }
+
+
+def render_json(document: dict[str, Any]) -> str:
+    return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+
+
+def render_ndjson(report: Report, meta: RunMeta) -> str:
+    """Events in order: run_started, node_probed*, finding*, warning*, run_finished."""
+    events: list[dict[str, Any]] = [
+        {
+            "event": "run_started",
+            "schema_version": SCHEMA_VERSION,
+            "tool_version": meta.tool_version,
+            "run": _run_header(report, meta),
+        }
+    ]
+    for trace in report.traces:
+        events += [
+            {"event": "node_probed", "direction": trace.direction.value, "node": _visit_json(v)}
+            for v in _ordered_visits(trace)
+        ]
+    events += [{"event": "finding", "finding": _finding_json(f)} for f in report.findings]
+    events += [{"event": "warning", "message": warning} for warning in report.warnings]
+    events.append(
+        {
+            "event": "run_finished",
+            "status": run_status(report),
+            "finished_at": meta.finished_at,
+            "stats": _stats(report),
+            "error": None,
+        }
+    )
+    return "".join(json.dumps(event, ensure_ascii=False) + "\n" for event in events)
+
+
+def render_ndjson_error(message: str, meta: RunMeta) -> str:
+    event = {
+        "event": "run_finished",
+        "status": "error",
+        "finished_at": meta.finished_at,
+        "stats": None,
+        "error": {"message": message},
+    }
+    return json.dumps(event, ensure_ascii=False) + "\n"
+
+
+def _run_header(report: Report, meta: RunMeta) -> dict[str, Any]:
+    return {
+        "start": {
+            **_node_ref(report.start),
+            "status": report.start_status.value,
+            "values": _values_json(report.start_values),
+        },
+        "column": report.column,
+        "column_type": report.column_type,
+        "values": list(report.values),
+        "direction": meta.direction,
+        "full_trace": report.full_trace,
+        "target": meta.target,
+        "started_at": meta.started_at,
+    }
+
+
+def _stats(report: Report) -> dict[str, int]:
+    findings = report.findings
+    return {
+        "nodes_visited": report.stats.nodes_visited,
+        "nodes_probed": report.stats.nodes_probed,
+        "value_queries": report.stats.value_queries,
+        "query_errors": report.stats.query_errors,
+        "findings": len(findings),
+        "uncertain_findings": sum(finding.uncertain for finding in findings),
+    }
+
+
+def _ordered_visits(trace: Trace) -> list[Visit]:
+    return sorted(trace.visits, key=lambda visit: (visit.depth, visit.node.unique_id))
+
+
+def _node_ref(node: Node) -> dict[str, Any]:
+    return {
+        "unique_id": node.unique_id,
+        "name": node.display_name,
+        "resource_type": node.resource_type,
+    }
+
+
+def _values_json(values: dict[str, Status]) -> dict[str, str]:
+    return {value: status.value for value, status in values.items()}
+
+
+def _visit_json(visit: Visit) -> dict[str, Any]:
+    return {
+        **_node_ref(visit.node),
+        "level": visit.depth,
+        "status": visit.status.value,
+        "values": _values_json(visit.values),
+        "column_type": visit.column_type,
+        "unknown_reason": visit.unknown_reason.value if visit.unknown_reason else None,
+        "detail": visit.detail,
+        "stopped": visit.stopped,
+        "reached_from": visit.via,
+    }
+
+
+def _finding_json(finding: Finding) -> dict[str, Any]:
+    return {
+        "direction": finding.direction.value,
+        "level": finding.depth,
+        "cause": finding.cause.value,
+        "node": _node_ref(finding.node),
+        "values": _values_json(finding.values),
+        "uncertain": finding.uncertain,
+        "candidates": [node.unique_id for node in finding.candidates],
+        "parents": [
+            {
+                **_node_ref(parent.node),
+                "status": parent.status.value,
+                "values": _values_json(parent.values),
+                "via": [node.unique_id for node in parent.via],
+            }
+            for parent in finding.parents
+        ],
+    }

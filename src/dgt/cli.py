@@ -10,7 +10,16 @@ from dgt import __version__
 from dgt.config import resolve_config
 from dgt.errors import DgtError
 from dgt.graph import DagGraph, Direction
-from dgt.output import render_text
+from dgt.output import (
+    RunMeta,
+    build_document,
+    error_document,
+    render_json,
+    render_ndjson,
+    render_ndjson_error,
+    render_text,
+    utc_timestamp,
+)
 from dgt.probes import (
     DBT_SHOW_TIMEOUT,
     DbtShow,
@@ -88,9 +97,10 @@ def read_values(args: argparse.Namespace) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    started_at = utc_timestamp()
     args = build_parser().parse_args(argv)
+    target = args.target
     try:
-        _check_supported(args)
         values = read_values(args)
         if values:
             # Validate up front so bad input fails before any dbt call.
@@ -98,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             for value in values:
                 sql_literal(value)
         config = resolve_config(args.project_dir, args.profiles_dir, args.target)
+        target = config.target
         for warning in config.warnings:
             print(f"dgt: warning: {warning}", file=sys.stderr)
         project = DbtProject.load(config.project_dir)
@@ -118,11 +129,18 @@ def main(argv: list[str] | None = None) -> int:
         )
     except DgtError as exc:
         print(f"dgt: error: {exc}", file=sys.stderr)
+        meta = RunMeta(__version__, args.direction, target, started_at, utc_timestamp())
+        if args.output == "json":
+            sys.stdout.write(render_json(error_document(str(exc), meta)))
+        elif args.output == "ndjson":
+            sys.stdout.write(render_ndjson_error(str(exc), meta))
         return EXIT_TOOL_ERROR
-    sys.stdout.write(render_text(report))
+
+    meta = RunMeta(__version__, args.direction, target, started_at, utc_timestamp())
+    if args.output == "json":
+        sys.stdout.write(render_json(build_document(report, meta)))
+    elif args.output == "ndjson":
+        sys.stdout.write(render_ndjson(report, meta))
+    else:
+        sys.stdout.write(render_text(report))
     return EXIT_OK
-
-
-def _check_supported(args: argparse.Namespace) -> None:
-    if args.output != "text":
-        raise DgtError(f"output format '{args.output}' is not implemented yet")

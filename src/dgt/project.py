@@ -117,7 +117,10 @@ class DbtProject:
         )
         hint = difflib.get_close_matches(name, candidates, n=3)
         suffix = f"; did you mean: {', '.join(hint)}?" if hint else ""
-        raise NodeNotFoundError(f"no model, seed, snapshot or source named '{name}'{suffix}")
+        raise NodeNotFoundError(
+            f"no model, seed or snapshot named '{name}' (name sources as source_name.table_name)"
+            f"{suffix}"
+        )
 
     def catalog_columns(self, unique_id: str) -> dict[str, str] | None:
         """Columns of a node per the catalog, keyed by lowercased name.

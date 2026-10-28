@@ -42,15 +42,6 @@ def test_unknown_start_status_is_tool_error(built_project_dir, capsys):
     assert code == EXIT_TOOL_ERROR
 
 
-@pytest.mark.parametrize(
-    "extra", [["-o", "json"], ["-o", "ndjson"]]
-)
-def test_unimplemented_options_are_tool_errors(built_project_dir, extra, capsys):
-    argv = ["dim_customers", "-c", "x", "--project-dir", str(built_project_dir), *extra]
-    assert main(argv) == EXIT_TOOL_ERROR
-    assert "not implemented yet" in capsys.readouterr().err
-
-
 def test_unknown_model_is_tool_error(built_project_dir, capsys):
     code = main(["nope", "-c", "x", "--project-dir", str(built_project_dir)])
     assert code == EXIT_TOOL_ERROR

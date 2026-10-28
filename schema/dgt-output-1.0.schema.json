@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:dgt:schema:output:1.0",
+  "title": "dgt output, schema_version 1.x",
+  "description": "Document written by `dgt -o json`. NDJSON events (`-o ndjson`) are described by $defs/ndjson_event. Minor versions only add fields; consumers should ignore fields they do not know.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tool_version", "status", "run", "traversals", "findings", "warnings", "error"],
+  "properties": {
+    "schema_version": {"type": "string", "pattern": "^1\\.[0-9]+$"},
+    "tool_version": {"type": "string"},
+    "status": {"enum": ["complete", "partial", "error"]},
+    "run": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/run"}]},
+    "traversals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["up", "down"],
+      "properties": {
+        "up": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/traversal"}]},
+        "down": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/traversal"}]}
+      }
+    },
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "error"}}},
+      "then": {"properties": {"run": {"type": "null"}, "error": {"$ref": "#/$defs/error"}}},
+      "else": {"properties": {"run": {"$ref": "#/$defs/run"}, "error": {"type": "null"}}}
+    }
+  ],
+  "$defs": {
+    "status": {"enum": ["present", "absent", "unknown"]},
+    "values": {
+      "description": "Value -> status, in the order the values were given. Empty in column mode.",
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/status"}
+    },
+    "node_ref": {
+      "type": "object",
+      "required": ["unique_id", "name", "resource_type"],
+      "properties": {
+        "unique_id": {"type": "string"},
+        "name": {"type": "string", "description": "Model name, or source_name.table_name for sources."},
+        "resource_type": {"enum": ["model", "seed", "snapshot", "source"]}
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["message"],
+      "properties": {"message": {"type": "string"}}
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes_visited", "nodes_probed", "value_queries", "query_errors", "findings", "uncertain_findings"],
+      "properties": {
+        "nodes_visited": {"type": "integer", "minimum": 1},
+        "nodes_probed": {"type": "integer", "minimum": 1},
+        "value_queries": {"type": "integer", "minimum": 0},
+        "query_errors": {"type": "integer", "minimum": 0},
+        "findings": {"type": "integer", "minimum": 0},
+        "uncertain_findings": {"type": "integer", "minimum": 0}
+      }
+    },
+    "run_header": {
+      "type": "object",
+      "required": ["start", "column", "column_type", "values", "direction", "full_trace", "target", "started_at"],
+      "properties": {
+        "start": {
+          "allOf": [{"$ref": "#/$defs/node_ref"}],
+          "type": "object",
+          "unevaluatedProperties": false,
+          "required": ["status", "values"],
+          "properties": {
+            "unique_id": true,
+            "name": true,
+            "resource_type": true,
+            "status": {"enum": ["present", "absent"]},
+            "values": {"$ref": "#/$defs/values"}
+          }
+        },
+        "column": {"type": "string"},
+        "column_type": {"type": ["string", "null"]},
+        "values": {"type": "array", "items": {"type": "string"}},
+        "direction": {"enum": ["up", "down", "both"]},
+        "full_trace": {"type": "boolean"},
+        "target": {"type": ["string", "null"]},
+        "started_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "run": {
+      "allOf": [{"$ref": "#/$defs/run_header"}],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["finished_at", "stats"],
+      "properties": {
+        "start": true, "column": true, "column_type": true, "values": true, "direction": true,
+        "full_trace": true, "target": true, "started_at": true,
+        "finished_at": {"type": "string", "format": "date-time"},
+        "stats": {"$ref": "#/$defs/stats"}
+      }
+    },
+    "visit": {
+      "allOf": [{"$ref": "#/$defs/node_ref"}],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["level", "status", "values", "column_type", "unknown_reason", "detail", "stopped", "reached_from"],
+      "properties": {
+        "unique_id": true, "name": true, "resource_type": true,
+        "level": {"type": "integer", "not": {"const": 0}},
+        "status": {"$ref": "#/$defs/status"},
+        "values": {"$ref": "#/$defs/values"},
+        "column_type": {"type": ["string", "null"]},
+        "unknown_reason": {"enum": [null, "ephemeral", "not_in_catalog", "query_error"]},
+        "detail": {"type": ["string", "null"], "description": "Shortened error message for query_error."},
+        "stopped": {"type": "boolean", "description": "The branch stopped here because the column, or every tracked value, changed status."},
+        "reached_from": {"type": "string", "description": "unique_id of the node this one was first reached from."}
+      }
+    },
+    "traversal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes"],
+      "properties": {
+        "nodes": {
+          "description": "Visited nodes except the start, ordered by level then unique_id.",
+          "type": "array",
+          "items": {"$ref": "#/$defs/visit"}
+        }
+      }
+    },
+    "parent": {
+      "allOf": [{"$ref": "#/$defs/node_ref"}],
+      "type": "object",
+      "unevaluatedProperties": false,
+      "required": ["status", "values", "via"],
+      "properties": {
+        "unique_id": true, "name": true, "resource_type": true,
+        "status": {"$ref": "#/$defs/status"},
+        "values": {"$ref": "#/$defs/values"},
+        "via": {
+          "description": "Unknown nodes passed through to reach this parent, nearest the child first.",
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "level", "cause", "node", "values", "uncertain", "candidates", "parents"],
+      "properties": {
+        "direction": {"enum": ["up", "down"]},
+        "level": {"type": "integer"},
+        "cause": {
+          "enum": [
+            "column_dropped", "column_appears", "present_at_source", "column_absent_at_source",
+            "present_at_leaf", "column_absent_at_leaf",
+            "value_dropped", "value_appears", "value_present_at_source", "value_absent_at_source",
+            "value_present_at_leaf", "value_absent_at_leaf"
+          ]
+        },
+        "node": {"$ref": "#/$defs/node_ref"},
+        "values": {"$ref": "#/$defs/values"},
+        "uncertain": {"type": "boolean"},
+        "candidates": {
+          "description": "When uncertain: nodes where the change may actually happen, this node first.",
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "parents": {"type": "array", "items": {"$ref": "#/$defs/parent"}}
+      },
+      "if": {"properties": {"uncertain": {"const": false}}},
+      "then": {"properties": {"candidates": {"maxItems": 0}}},
+      "else": {"properties": {"candidates": {"minItems": 2}}}
+    },
+    "ndjson_event": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event", "schema_version", "tool_version", "run"],
+          "properties": {
+            "event": {"const": "run_started"},
+            "schema_version": {"type": "string", "pattern": "^1\\.[0-9]+$"},
+            "tool_version": {"type": "string"},
+            "run": {
+              "allOf": [{"$ref": "#/$defs/run_header"}],
+              "unevaluatedProperties": false,
+              "properties": {
+                "start": true, "column": true, "column_type": true, "values": true, "direction": true,
+                "full_trace": true, "target": true, "started_at": true
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event", "direction", "node"],
+          "properties": {
+            "event": {"const": "node_probed"},
+            "direction": {"enum": ["up", "down"]},
+            "node": {"$ref": "#/$defs/visit"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event", "finding"],
+          "properties": {"event": {"const": "finding"}, "finding": {"$ref": "#/$defs/finding"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event", "message"],
+          "properties": {"event": {"const": "warning"}, "message": {"type": "string"}}
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["event", "status", "finished_at", "stats", "error"],
+          "properties": {
+            "event": {"const": "run_finished"},
+            "status": {"enum": ["complete", "partial", "error"]},
+            "finished_at": {"type": "string", "format": "date-time"},
+            "stats": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/stats"}]},
+            "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]}
+          },
+          "if": {"properties": {"status": {"const": "error"}}},
+          "then": {"properties": {"stats": {"type": "null"}, "error": {"$ref": "#/$defs/error"}}},
+          "else": {"properties": {"stats": {"$ref": "#/$defs/stats"}, "error": {"type": "null"}}}
+        }
+      ]
+    }
+  }
+}

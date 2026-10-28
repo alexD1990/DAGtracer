@@ -31,6 +31,7 @@ from dgt.findings import (
     Finding,
     ParentStatus,
     Report,
+    Stats,
     Status,
     Trace,
     UnknownReason,
@@ -79,7 +80,17 @@ def trace_column(
     tracer = _Tracer(project, graph, prober, start, full_trace)
     report.traces.extend(tracer.trace(direction) for direction in directions)
 
-    for uid, state in sorted(prober.probed().items()):
+    probed = prober.probed()
+    visited = {start.unique_id} | {
+        visit.node.unique_id for trace in report.traces for visit in trace.visits
+    }
+    report.stats = Stats(
+        nodes_visited=len(visited),
+        nodes_probed=len(probed),
+        value_queries=prober.value_queries,
+        query_errors=prober.query_errors,
+    )
+    for uid, state in sorted(probed.items()):
         reason = state.column.unknown_reason
         if reason is UnknownReason.NOT_IN_CATALOG:
             report.warnings.append(
@@ -190,7 +201,9 @@ class _Tracer:
                 trace.findings.extend(self._judge(entry, keys, direction))
         # Data-flow order: most upstream level first.
         trace.findings.sort(
-            key=lambda f: (f.depth, f.node.display_name, f.cause.value, f.uncertain)
+            key=lambda f: (
+                f.depth, f.node.display_name, f.node.unique_id, f.cause.value, f.uncertain
+            )
         )
         trace.visits = [
             Visit(

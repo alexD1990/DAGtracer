@@ -125,6 +125,14 @@ class Trace:
     findings: list[Finding] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class Stats:
+    nodes_visited: int = 0
+    nodes_probed: int = 0
+    value_queries: int = 0
+    query_errors: int = 0
+
+
 @dataclass
 class Report:
     start: Node
@@ -136,3 +144,14 @@ class Report:
     column_type: str | None = None
     traces: list[Trace] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    stats: Stats = field(default_factory=Stats)
+
+    @property
+    def findings(self) -> list[Finding]:
+        """All findings in data-flow order: upstream trace first, then downstream."""
+        return [finding for trace in self.traces for finding in trace.findings]
+
+    @property
+    def partial(self) -> bool:
+        """Whether any result rests on unknown information."""
+        return self.stats.query_errors > 0 or any(f.uncertain for f in self.findings)
