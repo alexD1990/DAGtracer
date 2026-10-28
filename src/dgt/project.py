@@ -74,6 +74,7 @@ class DbtProject:
                 raise ArtifactError(f"{path} not found; run `dbt docs generate` in {project_dir}")
             artifacts.append(_read_json(path))
         manifest, catalog = artifacts
+        validate_manifest(manifest)
         return cls(project_dir, manifest, catalog)
 
     def has_node(self, unique_id: str) -> bool:
@@ -145,6 +146,34 @@ class DbtProject:
         if manifest_ts is None or catalog_ts is None:
             return False
         return manifest_ts - catalog_ts > STALE_CATALOG_TOLERANCE
+
+
+def unresolved_dependency_nodes(manifest: dict[str, Any]) -> list[str]:
+    """Nodes with `refs` or `sources` but an empty `depends_on.nodes`.
+
+    dbt resolves refs and sources only for nodes whose `created_at` is not
+    before the parse start (both wall-clock time). A backward clock jump
+    during parsing (seen on WSL2) leaves such nodes without dependencies,
+    which would make every column look like it appears there.
+    """
+    return sorted(
+        uid
+        for uid, raw in manifest.get("nodes", {}).items()
+        if (raw.get("refs") or raw.get("sources"))
+        and not raw.get("depends_on", {}).get("nodes")
+    )
+
+
+def validate_manifest(manifest: dict[str, Any]) -> None:
+    broken = unresolved_dependency_nodes(manifest)
+    if broken:
+        listed = "\n  ".join(broken)
+        raise ArtifactError(
+            f"manifest.json is inconsistent: {len(broken)} node(s) reference other nodes "
+            "but have no resolved dependencies. dbt can produce this when the system clock "
+            "jumps backwards during parsing. Run `dbt parse` (and `dbt docs generate`) "
+            f"again.\n  {listed}"
+        )
 
 
 def _names_for(unique_id: str, raw: dict[str, Any]) -> set[str]:

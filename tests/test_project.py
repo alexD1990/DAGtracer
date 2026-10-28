@@ -4,7 +4,7 @@ import shutil
 import pytest
 
 from dgt.errors import AmbiguousNodeError, ArtifactError, NodeNotFoundError
-from dgt.project import DbtProject
+from dgt.project import DbtProject, unresolved_dependency_nodes
 
 
 def test_find_model_by_short_name(project):
@@ -159,3 +159,43 @@ def test_catalog_section_matches_node_kind(tmp_path):
     }
     project = DbtProject(tmp_path, _manifest(), catalog)
     assert project.catalog_columns("source.a.raw.t") is None
+
+
+def _write_artifacts(project_dir, manifest):
+    (project_dir / "dbt_project.yml").write_text("name: x\n")
+    (project_dir / "target").mkdir()
+    (project_dir / "target" / "manifest.json").write_text(json.dumps(manifest))
+    (project_dir / "target" / "catalog.json").write_text(json.dumps(EMPTY_CATALOG))
+
+
+def _model(refs=(), sources=(), depends_on=()):
+    return {
+        "name": "m",
+        "resource_type": "model",
+        "refs": [{"name": r, "package": None, "version": None} for r in refs],
+        "sources": [list(s) for s in sources],
+        "depends_on": {"macros": [], "nodes": list(depends_on)},
+    }
+
+
+def test_manifest_with_unresolved_dependencies_is_rejected(tmp_path):
+    manifest = _manifest(
+        nodes={
+            "model.a.ok": _model(refs=["base"], depends_on=["model.a.base"]),
+            "model.a.base": _model(),
+            "model.a.lost_ref": _model(refs=["base"]),
+            "model.a.lost_source": _model(sources=[("raw", "t")]),
+            "test.a.lost_test": _model(refs=["ok"]),
+        }
+    )
+    _write_artifacts(tmp_path, manifest)
+    with pytest.raises(ArtifactError) as exc:
+        DbtProject.load(tmp_path)
+    message = str(exc.value)
+    assert "3 node(s)" in message
+    assert "Run `dbt parse`" in message
+    assert message.endswith("model.a.lost_ref\n  model.a.lost_source\n  test.a.lost_test")
+
+
+def test_built_manifest_is_consistent(project):
+    assert unresolved_dependency_nodes(project.manifest) == []
