@@ -1,0 +1,8 @@
+testproject:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      # Relative path: dbt must run with cwd=project_dir.
+      path: testproject.duckdb
+      threads: 1

@@ -1,0 +1,21 @@
+name: testproject
+version: "1.0"
+config-version: 2
+profile: testproject
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+macro-paths: ["macros"]
+
+on-run-start:
+  - "{{ create_raw_payments() }}"
+
+models:
+  testproject:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table
