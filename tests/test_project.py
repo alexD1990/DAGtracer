@@ -199,3 +199,10 @@ def test_manifest_with_unresolved_dependencies_is_rejected(tmp_path):
 
 def test_built_manifest_is_consistent(project):
     assert unresolved_dependency_nodes(project.manifest) == []
+
+
+def test_inconsistent_manifest_reported_before_missing_catalog(tmp_path):
+    _write_artifacts(tmp_path, _manifest(nodes={"model.a.m": _model(refs=["base"])}))
+    (tmp_path / "target" / "catalog.json").unlink()
+    with pytest.raises(ArtifactError, match="manifest.json is inconsistent"):
+        DbtProject.load(tmp_path)

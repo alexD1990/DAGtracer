@@ -67,14 +67,11 @@ class DbtProject:
         if not (project_dir / "dbt_project.yml").is_file():
             raise ArtifactError(f"no dbt_project.yml in {project_dir}")
         target_dir = project_dir / _target_path(project_dir)
-        artifacts = []
-        for filename in ("manifest.json", "catalog.json"):
-            path = target_dir / filename
-            if not path.is_file():
-                raise ArtifactError(f"{path} not found; run `dbt docs generate` in {project_dir}")
-            artifacts.append(_read_json(path))
-        manifest, catalog = artifacts
+        # The manifest is validated before the catalog is required: a broken
+        # parse is the likelier root cause of a missing catalog.
+        manifest = _read_artifact(target_dir / "manifest.json", project_dir)
         validate_manifest(manifest)
+        catalog = _read_artifact(target_dir / "catalog.json", project_dir)
         return cls(project_dir, manifest, catalog)
 
     def has_node(self, unique_id: str) -> bool:
@@ -201,6 +198,12 @@ def _target_path(project_dir: Path) -> str:
     except yaml.YAMLError as exc:
         raise ArtifactError(f"{project_dir / 'dbt_project.yml'}: invalid YAML: {exc}") from exc
     return (project_yml or {}).get("target-path") or "target"
+
+
+def _read_artifact(path: Path, project_dir: Path) -> dict[str, Any]:
+    if not path.is_file():
+        raise ArtifactError(f"{path} not found; run `dbt docs generate` in {project_dir}")
+    return _read_json(path)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
