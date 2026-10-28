@@ -298,8 +298,8 @@ def test_value_appears():
 def test_column_level_takes_precedence_and_skips_value_query():
     project = make_project([("seed:s", "a")], {"seed:s": ["x"], "a": []})
     report, show = vtrace(project, "a", "x", ["k", "m"], {"s": {"k": 1}})
-    assert vfound(report) == [("column_dropped", "a", 0, ["k", "m"])]
-    assert set(report.traces[0].findings[0].values.values()) == {Status.ABSENT}
+    assert vfound(report) == [("column_dropped", "a", 0, ["k"])]
+    assert report.traces[0].findings[0].values == {"k": Status.ABSENT}
     assert show.queries == ["s"]
 
 
@@ -589,3 +589,9 @@ def test_column_absent_at_source_lists_values():
     project = make_project([("seed:s", "b")], {"seed:s": [], "b": []})
     report, _ = vtrace(project, "b", "x", ["k", "m"], {})
     assert vfound(report) == [("column_absent_at_source", "s", -1, ["k", "m"])]
+
+
+def test_column_dropped_without_lost_values_lists_none():
+    project = make_project([("seed:s", "a")], {"seed:s": ["x"], "a": []})
+    report, _ = vtrace(project, "a", "x", ["k"], {})
+    assert vfound(report) == [("column_dropped", "a", 0, [])]

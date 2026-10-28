@@ -325,7 +325,12 @@ class _Tracer:
                 if any(not parent.via for parent in with_column)
                 else [via for parent in with_column for via in parent.via]
             )
-            return [finding(Cause.COLUMN_DROPPED, parents, unknowns, values)]
+            lost = [
+                value
+                for value in values
+                if any(parent.values[value] is Status.PRESENT for parent in with_column)
+            ]
+            return [finding(Cause.COLUMN_DROPPED, parents, unknowns, lost)]
 
         if not with_column:
             return [finding(Cause.COLUMN_APPEARS, parents, _unknowns_in(parents), values)]

@@ -145,7 +145,7 @@ def _format_finding(
         f"  {_level(finding.depth):>2}  {direction}{finding.cause.value:<23}  "
         f"{finding.node.display_name}"
     )
-    if finding.values:
+    if finding.values or (tracked and finding.cause is Cause.COLUMN_DROPPED):
         head += f" [{_format_finding_values(finding, tracked)}]"
     if finding.uncertain:
         head += f"  (uncertain: {', '.join(node.display_name for node in finding.candidates)})"
@@ -155,19 +155,17 @@ def _format_finding(
     return lines
 
 
-_COLUMN_LEVEL = frozenset(
-    {
-        Cause.COLUMN_DROPPED,
-        Cause.COLUMN_APPEARS,
-        Cause.COLUMN_ABSENT_AT_SOURCE,
-        Cause.COLUMN_ABSENT_AT_LEAF,
-    }
+# Findings whose values have mixed or noteworthy statuses, shown as value=status.
+_WITH_STATUS = frozenset(
+    {Cause.COLUMN_APPEARS, Cause.COLUMN_ABSENT_AT_SOURCE, Cause.COLUMN_ABSENT_AT_LEAF}
 )
 
 
 def _format_finding_values(finding: Finding, tracked: tuple[str, ...]) -> str:
-    """Value-level findings list names; column-level ones list each value's status."""
-    if finding.cause not in _COLUMN_LEVEL:
+    """Names of the values a finding is about, or value=status where status varies."""
+    if finding.cause is Cause.COLUMN_DROPPED and not finding.values:
+        return "no tracked values lost"
+    if finding.cause not in _WITH_STATUS:
         return ", ".join(finding.values)
     statuses = set(finding.values.values())
     if statuses == {Status.ABSENT} and tuple(finding.values) == tracked:

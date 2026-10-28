@@ -79,9 +79,14 @@ class Finding:
     - column_absent_at_leaf / value_absent_at_leaf: it is still absent here,
       so "nowhere downstream" is explicit rather than an empty result.
 
-    In value mode `values` maps values to their status in this node: every
-    value judged here for column-level findings, the affected values for
-    value-level findings. It is empty in column mode. `depth` is the
+    In value mode `values` maps the values a finding is about to their status
+    in this node (empty in column mode):
+    - *_dropped: values present in at least one parent and absent here.
+    - column_appears: every tracked value judged here.
+    - value_appears: the values that appear here.
+    - *_at_source / *_at_leaf: the values the finding names (all of them for
+      column_absent_*).
+    `depth` is the
     node's signed level in the traversal that found it. A finding that depends
     on an unknown node is `uncertain`; `candidates` then lists the nodes where
     the change may actually happen, this node first. There is at most one

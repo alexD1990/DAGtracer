@@ -153,3 +153,18 @@ def test_downstream_findings_grouped_by_reach():
         "    +2  column_appears           d\n"
         "          parents: c (absent)\n"
     )
+
+
+def test_column_dropped_text_lists_lost_values_or_says_none():
+    project = make_project([("seed:s", "a")], {"seed:s": ["x"], "a": []})
+    assert "   0  column_dropped           a [k]\n" in render(
+        project, "a", "x", ["k", "m"], FakeShow({"s": {"k": 1}})
+    )
+    assert "   0  column_dropped           a [no tracked values lost]\n" in render(
+        project, "a", "x", ["k", "m"], FakeShow({})
+    )
+
+
+def test_column_dropped_in_column_mode_has_no_value_list():
+    project = make_project([("seed:s", "a")], {"seed:s": ["x"], "a": []})
+    assert "   0  column_dropped           a\n" in render(project, "a", "x")

@@ -166,20 +166,20 @@ node's parents. It does not depend on the edge the traversal arrived by.
 - **Grouping:** findings are grouped per (node, cause, uncertain), with the
   affected values listed.
 
-| Cause | Direction | Meaning |
-|---|---|---|
-| `column_dropped` | up, down | Node lacks the column; at least one known parent has it. |
-| `column_appears` | up, down | Node has the column; no known parent has it. |
-| `present_at_source` | up | Seed/source with the column (column mode). |
-| `column_absent_at_source` | up | Seed/source without the column, reached along a branch where it was absent all the way. |
-| `present_at_leaf` | down | Model/snapshot without model/snapshot children that still has the column. |
-| `column_absent_at_leaf` | down | Leaf without the column, reached along a branch where it was absent all the way. |
-| `value_dropped` | up, down | Node has the column but not the value; a known parent has the value. |
-| `value_appears` | up, down | Node has the value; no known parent has it. |
-| `value_present_at_source` | up | Seed/source with the value. |
-| `value_absent_at_source` | up | Seed/source with the column but without the value, along an all-absent branch. |
-| `value_present_at_leaf` | down | Leaf that still has the value. |
-| `value_absent_at_leaf` | down | Leaf without the value, along an all-absent branch. |
+| Cause | Direction | Meaning | Values listed (value mode) |
+|---|---|---|---|
+| `column_dropped` | up, down | Node lacks the column; at least one known parent has it. | Values present in at least one parent, now absent. Text shows `[no tracked values lost]` if none. |
+| `column_appears` | up, down | Node has the column; no known parent has it. | Every tracked value, with its status in the node. |
+| `present_at_source` | up | Seed/source with the column (column mode). | — |
+| `column_absent_at_source` | up | Seed/source without the column, reached along a branch where it was absent all the way. | Every tracked value (all absent). |
+| `present_at_leaf` | down | Model/snapshot without model/snapshot children that still has the column. | — |
+| `column_absent_at_leaf` | down | Leaf without the column, reached along a branch where it was absent all the way. | Every tracked value (all absent). |
+| `value_dropped` | up, down | Node has the column but not the value; a known parent has the value. | Values present in at least one parent, absent here. |
+| `value_appears` | up, down | Node has the value; no known parent has it. | The values that appear here. |
+| `value_present_at_source` | up | Seed/source with the value. | The values present. |
+| `value_absent_at_source` | up | Seed/source with the column but without the value, along an all-absent branch. | The values absent. |
+| `value_present_at_leaf` | down | Leaf that still has the value. | The values present. |
+| `value_absent_at_leaf` | down | Leaf without the value, along an all-absent branch. | The values absent. |
 
 The `*_at_source` and `*_at_leaf` findings make "nowhere upstream" and "never
 reaches downstream" explicit. When there are no findings at all, the text
@@ -286,9 +286,9 @@ The output is one document. Its contract is
     explains the problem. The document is still written to stdout, and the
     exit code is still 2.
 - **`values`:** objects map each value to `present` / `absent` / `unknown`, in
-  the order the values were given. They are empty in column mode. Column-level
-  findings list every value judged at the node; value-level findings list the
-  affected values.
+  the order the values were given. They are empty in column mode. Which values
+  a finding lists depends on its cause; see the table under
+  [How it works](#how-it-works).
 - **Ordering:** deterministic everywhere. Nodes are ordered by level, then
   `unique_id`. Findings follow data-flow order. Two runs differ only in
   `started_at` and `finished_at`.
