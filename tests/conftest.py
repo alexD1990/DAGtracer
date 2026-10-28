@@ -9,6 +9,9 @@ from dgt.project import DbtProject
 
 TESTPROJECT = Path(__file__).resolve().parent.parent / "testproject"
 BUILD_ARTIFACTS = ("target", "logs", "testproject.duckdb", ".user.yml")
+# A backward wall-clock jump during parsing (seen on WSL2) can make dbt drop
+# ref() dependencies and fail the build; a clean rebuild succeeds.
+BUILD_ATTEMPTS = 3
 
 
 def _dbt_executable() -> str:
@@ -25,6 +28,16 @@ def built_project_dir(tmp_path_factory) -> Path:
     project_dir = tmp_path_factory.mktemp("dbt") / "testproject"
     shutil.copytree(TESTPROJECT, project_dir, ignore=shutil.ignore_patterns(*BUILD_ARTIFACTS))
     dbt = _dbt_executable()
+    for _ in range(BUILD_ATTEMPTS):
+        failure = _build(dbt, project_dir)
+        if failure is None:
+            return project_dir
+        shutil.rmtree(project_dir / "target", ignore_errors=True)
+    pytest.fail(failure)
+
+
+def _build(dbt: str, project_dir: Path) -> str | None:
+    """Run dbt build and docs generate; return a failure message or None."""
     for command in (["build"], ["docs", "generate"]):
         result = subprocess.run(
             [dbt, *command, "--profiles-dir", str(project_dir)],
@@ -32,8 +45,12 @@ def built_project_dir(tmp_path_factory) -> Path:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, result.stdout + result.stderr
-    return project_dir
+        if result.returncode != 0:
+            output = (result.stdout + result.stderr).strip()
+            errors = [line for line in output.splitlines() if "error" in line.lower()]
+            headline = errors[-1].strip() if errors else output.splitlines()[-1]
+            return f"dbt {' '.join(command)} failed: {headline}\n{output}"
+    return None
 
 
 @pytest.fixture(scope="session")

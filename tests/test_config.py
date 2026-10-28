@@ -50,7 +50,7 @@ def test_empty_file_is_allowed(tmp_path):
     "text, message",
     [
         ("project_dir: [a, b]\n", "non-empty string"),
-        ("unknown: 1\n", "unknown key"),
+        ("target: 3\n", "non-empty string"),
         ("- a\n- b\n", "mapping"),
         ("project_dir: [\n", "invalid YAML"),
     ],
@@ -59,3 +59,10 @@ def test_invalid_file_raises(tmp_path, text, message):
     write_config(tmp_path, text)
     with pytest.raises(ConfigError, match=message):
         resolve_config(cwd=tmp_path)
+
+
+def test_unknown_keys_and_nulls_ignored(tmp_path):
+    write_config(tmp_path, "future_option: 1\ntarget: null\nproject_dir: proj\n")
+    config = resolve_config(cwd=tmp_path)
+    assert config.target is None
+    assert config.project_dir == (tmp_path / "proj").resolve()

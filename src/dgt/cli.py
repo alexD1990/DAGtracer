@@ -9,7 +9,10 @@ from pathlib import Path
 from dgt import __version__
 from dgt.config import resolve_config
 from dgt.errors import DgtError
+from dgt.graph import DagGraph, Direction
+from dgt.output import render_text
 from dgt.project import DbtProject
+from dgt.traverse import trace_column
 
 EXIT_OK = 0
 EXIT_TOOL_ERROR = 2
@@ -63,13 +66,25 @@ def read_values(args: argparse.Namespace) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        _check_supported(args)
         config = resolve_config(args.project_dir, args.profiles_dir, args.target)
-        read_values(args)
         project = DbtProject.load(config.project_dir)
         start = project.find_node(args.start_model)
+        report = trace_column(
+            project, DagGraph(project.manifest), start, args.column,
+            [Direction(args.direction)], full_trace=args.full_trace,
+        )
     except DgtError as exc:
         print(f"dgt: error: {exc}", file=sys.stderr)
         return EXIT_TOOL_ERROR
-    print(f"dgt: resolved start node {start.unique_id}; tracing is not implemented yet",
-          file=sys.stderr)
+    sys.stdout.write(render_text(report))
     return EXIT_OK
+
+
+def _check_supported(args: argparse.Namespace) -> None:
+    if read_values(args):
+        raise DgtError("value tracing (-v/--values-file) is not implemented yet")
+    if args.direction != "up":
+        raise DgtError(f"direction '{args.direction}' is not implemented yet")
+    if args.output != "text":
+        raise DgtError(f"output format '{args.output}' is not implemented yet")

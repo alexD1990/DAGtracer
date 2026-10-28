@@ -13,14 +13,16 @@ def graph(project):
 def test_upstream_parents(graph):
     assert graph.neighbors(f"model.{P}.dim_customers", Direction.UP) == [
         f"model.{P}.fct_orders",
-        f"model.{P}.stg_customers",
+        f"model.{P}.int_customers_named",
+        f"model.{P}.int_customers_slim",
     ]
 
 
 def test_upstream_through_ephemeral(graph):
     assert graph.neighbors(f"model.{P}.fct_orders", Direction.UP) == [
         f"model.{P}.int_order_payments",
-        f"model.{P}.stg_orders",
+        f"model.{P}.int_orders_enriched",
+        f"model.{P}.int_orders_valid",
     ]
     assert graph.neighbors(f"model.{P}.int_order_payments", Direction.UP) == [
         f"model.{P}.stg_payments"
@@ -41,7 +43,8 @@ def test_seed_and_source_terminal_upstream(graph, uid):
 
 def test_downstream_includes_snapshot(graph):
     assert graph.neighbors(f"model.{P}.stg_customers", Direction.DOWN) == [
-        f"model.{P}.dim_customers",
+        f"model.{P}.int_customers_named",
+        f"model.{P}.int_customers_slim",
         f"snapshot.{P}.customers_snapshot",
     ]
 

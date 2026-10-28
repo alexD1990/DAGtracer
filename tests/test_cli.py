@@ -27,10 +27,26 @@ def test_column_required():
     assert exc.value.code == 2
 
 
-def test_resolves_start_node(built_project_dir, capsys):
-    code = main(["fct_orders", "-c", "order_id", "--project-dir", str(built_project_dir)])
+def test_traces_upstream(built_project_dir, capsys):
+    code = main(["dim_customers", "-c", "last_name", "--project-dir", str(built_project_dir)])
     assert code == EXIT_OK
-    assert "model.testproject.fct_orders" in capsys.readouterr().err
+    out = capsys.readouterr().out
+    assert "Findings (2)" in out
+    assert "column_appears  int_customers_slim -> dim_customers" in out
+
+
+def test_unknown_start_status_is_tool_error(built_project_dir, capsys):
+    code = main(["int_order_payments", "-c", "total_paid", "--project-dir", str(built_project_dir)])
+    assert code == EXIT_TOOL_ERROR
+
+
+@pytest.mark.parametrize(
+    "extra", [["-d", "down"], ["-d", "both"], ["-v", "a"], ["-o", "json"]]
+)
+def test_unimplemented_options_are_tool_errors(built_project_dir, extra, capsys):
+    argv = ["dim_customers", "-c", "x", "--project-dir", str(built_project_dir), *extra]
+    assert main(argv) == EXIT_TOOL_ERROR
+    assert "not implemented yet" in capsys.readouterr().err
 
 
 def test_unknown_model_is_tool_error(built_project_dir, capsys):

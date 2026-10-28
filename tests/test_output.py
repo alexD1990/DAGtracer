@@ -1,0 +1,40 @@
+from dgt.graph import DagGraph, Direction
+from dgt.output import render_text
+from dgt.traverse import trace_column
+
+from factory import make_project
+
+
+def test_text_output_groups_levels():
+    project = make_project(
+        [("seed:s", "a"), ("a", "c"), ("b", "c")],
+        {"seed:s": ["x"], "a": ["x"], "b": [], "c": ["x"]},
+    )
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("c"), "x", [Direction.UP]
+    )
+    assert render_text(report) == (
+        "Column 'x' from c (model.p.c)\n"
+        "Start status: present\n"
+        "\n"
+        "Upstream\n"
+        "   -1 a  model     present\n"
+        "      b  model     absent     <- stop\n"
+        "   -2 s  seed      present\n"
+        "\n"
+        "Findings (1)\n"
+        "  -1  column_appears  b -> c\n"
+    )
+
+
+def test_text_output_lists_warnings_and_empty_trace():
+    project = make_project(
+        [], {"a": ["x"]}, generated_at=("2024-02-01T00:00:00Z", "2024-01-01T00:00:00Z")
+    )
+    report = trace_column(
+        project, DagGraph(project.manifest), project.find_node("a"), "x", [Direction.UP]
+    )
+    text = render_text(report)
+    assert "  (no neighbors)\n" in text
+    assert "Findings (0)\n  none\n" in text
+    assert "\nWarnings\n  catalog.json" in text

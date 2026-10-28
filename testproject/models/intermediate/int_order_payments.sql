@@ -1,3 +1,5 @@
+{{ config(materialized='ephemeral') }}
+
 select
     order_id,
     sum(payment_amount) as total_paid

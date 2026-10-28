@@ -27,27 +27,32 @@ class Config:
 
 
 def load_config_file(cwd: Path) -> dict[str, str]:
-    """Read `.dgt.yml` from `cwd`. Returns an empty dict if the file does not exist."""
+    """Read `.dgt.yml` from `cwd`. Returns an empty dict if the file does not exist.
+
+    Unknown keys and null values are ignored, so newer config files still load.
+    """
     path = cwd / CONFIG_FILENAME
     if not path.is_file():
         return {}
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}") from exc
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: invalid YAML: {exc}") from exc
     if data is None:
         return {}
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: expected a mapping at the top level")
-    unknown = sorted(set(data) - set(CONFIG_KEYS))
-    if unknown:
-        raise ConfigError(
-            f"{path}: unknown key(s) {', '.join(unknown)}; allowed: {', '.join(CONFIG_KEYS)}"
-        )
-    for key, value in data.items():
+    result: dict[str, str] = {}
+    for key in CONFIG_KEYS:
+        value = data.get(key)
+        if value is None:
+            continue
         if not isinstance(value, str) or not value:
             raise ConfigError(f"{path}: '{key}' must be a non-empty string")
-    return data
+        result[key] = value
+    return result
 
 
 def resolve_config(
