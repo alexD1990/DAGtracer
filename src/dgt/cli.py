@@ -68,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         _check_supported(args)
         config = resolve_config(args.project_dir, args.profiles_dir, args.target)
+        for warning in config.warnings:
+            print(f"dgt: warning: {warning}", file=sys.stderr)
         project = DbtProject.load(config.project_dir)
         start = project.find_node(args.start_model)
         report = trace_column(

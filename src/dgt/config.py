@@ -8,7 +8,8 @@ lookup rules.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import difflib
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -24,16 +25,19 @@ class Config:
     project_dir: Path
     profiles_dir: Path | None
     target: str | None
+    warnings: tuple[str, ...] = field(default=())
 
 
-def load_config_file(cwd: Path) -> dict[str, str]:
-    """Read `.dgt.yml` from `cwd`. Returns an empty dict if the file does not exist.
+def load_config_file(cwd: Path) -> tuple[dict[str, str], list[str]]:
+    """Read `.dgt.yml` from `cwd`; returns (values, warnings).
 
-    Unknown keys and null values are ignored, so newer config files still load.
+    Missing file gives no values. Null values are skipped. Unknown keys are
+    not an error, so newer config files still load, but each one produces a
+    warning so typos like `profile_dir` are noticed.
     """
     path = cwd / CONFIG_FILENAME
     if not path.is_file():
-        return {}
+        return {}, []
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except OSError as exc:
@@ -41,9 +45,10 @@ def load_config_file(cwd: Path) -> dict[str, str]:
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: invalid YAML: {exc}") from exc
     if data is None:
-        return {}
+        return {}, []
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: expected a mapping at the top level")
+    warnings = [_unknown_key_warning(path, key) for key in data if key not in CONFIG_KEYS]
     result: dict[str, str] = {}
     for key in CONFIG_KEYS:
         value = data.get(key)
@@ -52,7 +57,13 @@ def load_config_file(cwd: Path) -> dict[str, str]:
         if not isinstance(value, str) or not value:
             raise ConfigError(f"{path}: '{key}' must be a non-empty string")
         result[key] = value
-    return result
+    return result, warnings
+
+
+def _unknown_key_warning(path: Path, key: object) -> str:
+    hint = difflib.get_close_matches(str(key), CONFIG_KEYS, n=1)
+    suggestion = f"; did you mean '{hint[0]}'?" if hint else f"; known keys: {', '.join(CONFIG_KEYS)}"
+    return f"{path}: unknown key '{key}' ignored{suggestion}"
 
 
 def resolve_config(
@@ -63,7 +74,7 @@ def resolve_config(
 ) -> Config:
     """Merge CLI values with `.dgt.yml` in `cwd`. Relative paths resolve against `cwd`."""
     cwd = (cwd or Path.cwd()).resolve()
-    file_values = load_config_file(cwd)
+    file_values, warnings = load_config_file(cwd)
 
     def pick(cli_value: str | None, key: str) -> str | None:
         return cli_value if cli_value is not None else file_values.get(key)
@@ -73,6 +84,7 @@ def resolve_config(
         project_dir=_absolute(pick(project_dir, "project_dir") or ".", cwd),
         profiles_dir=_absolute(resolved_profiles, cwd) if resolved_profiles else None,
         target=pick(target, "target"),
+        warnings=tuple(warnings),
     )
 
 

@@ -61,8 +61,25 @@ def test_invalid_file_raises(tmp_path, text, message):
         resolve_config(cwd=tmp_path)
 
 
-def test_unknown_keys_and_nulls_ignored(tmp_path):
-    write_config(tmp_path, "future_option: 1\ntarget: null\nproject_dir: proj\n")
+def test_nulls_ignored(tmp_path):
+    write_config(tmp_path, "target: null\nproject_dir: proj\n")
     config = resolve_config(cwd=tmp_path)
     assert config.target is None
     assert config.project_dir == (tmp_path / "proj").resolve()
+    assert config.warnings == ()
+
+
+def test_unknown_key_warns_with_suggestion(tmp_path):
+    write_config(tmp_path, "profile_dir: p\n")
+    config = resolve_config(cwd=tmp_path)
+    assert config.profiles_dir is None
+    (warning,) = config.warnings
+    assert warning.endswith("unknown key 'profile_dir' ignored; did you mean 'profiles_dir'?")
+
+
+def test_unknown_key_without_close_match_lists_known_keys(tmp_path):
+    write_config(tmp_path, "future_option: 1\n")
+    (warning,) = resolve_config(cwd=tmp_path).warnings
+    assert warning.endswith(
+        "unknown key 'future_option' ignored; known keys: project_dir, profiles_dir, target"
+    )

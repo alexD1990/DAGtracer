@@ -57,3 +57,13 @@ def test_unknown_model_is_tool_error(built_project_dir, capsys):
 
 def test_missing_project_is_tool_error(tmp_path, capsys):
     assert main(["m", "-c", "x", "--project-dir", str(tmp_path)]) == EXIT_TOOL_ERROR
+
+
+def test_config_warnings_go_to_stderr(built_project_dir, tmp_path, monkeypatch, capsys):
+    (tmp_path / ".dgt.yml").write_text(f"project_dir: {built_project_dir}\nprofile_dir: x\n")
+    monkeypatch.chdir(tmp_path)
+    assert main(["dim_customers", "-c", "last_name"]) == EXIT_OK
+    captured = capsys.readouterr()
+    assert "dgt: warning:" in captured.err
+    assert "did you mean 'profiles_dir'?" in captured.err
+    assert "warning" not in captured.out
