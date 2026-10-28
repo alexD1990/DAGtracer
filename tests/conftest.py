@@ -8,9 +8,11 @@ import pytest
 from dgt.project import DbtProject
 
 TESTPROJECT = Path(__file__).resolve().parent.parent / "testproject"
-BUILD_ARTIFACTS = ("target", "logs", "testproject.duckdb", ".user.yml")
-# A backward wall-clock jump during parsing (seen on WSL2) can make dbt drop
-# ref() dependencies and fail the build; a clean rebuild succeeds.
+BUILD_ARTIFACTS = ("target", "logs", "dbt_packages", "*.duckdb", "*.duckdb.wal", ".user.yml")
+# dbt resolves ref() only for nodes with created_at >= the parse start time
+# (dbt/parser/manifest.py, process_refs), both taken from time.time(). A
+# backward wall-clock jump during parsing (seen on WSL2) therefore leaves
+# depends_on empty and the build fails; a clean rebuild succeeds.
 BUILD_ATTEMPTS = 3
 
 
@@ -40,7 +42,7 @@ def _build(dbt: str, project_dir: Path) -> str | None:
     """Run dbt build and docs generate; return a failure message or None."""
     for command in (["build"], ["docs", "generate"]):
         result = subprocess.run(
-            [dbt, *command, "--profiles-dir", str(project_dir)],
+            [dbt, *command, "--profiles-dir", str(project_dir), "--no-partial-parse"],
             cwd=project_dir,
             capture_output=True,
             text=True,
