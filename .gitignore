@@ -8,3 +8,4 @@ testproject/dbt_packages/
 testproject/*.duckdb
 testproject/.user.yml
 .mcp/
+docs/
